@@ -5,7 +5,6 @@ import {
   formatMoney,
   makePlayer,
   newId,
-  oweOrRefundLabel,
   parsePlayerNamesBlob,
   suggestedCarryOver,
 } from "@/lib/finance";
@@ -451,10 +450,11 @@ export function FinanceApp() {
             Garden State 11
           </h1>
           <p className="mt-1 max-w-xl text-sm text-[var(--muted)]">
-            Track season fees separately from shared expenses. Log expenses under
-            who paid—refunds vs what you owe use only those payments vs your
-            equal share of total expenses. Data stays in your browser;
-            auto-backups keep prior versions when you change something.
+            Team money is one pool (carry-over + fees). Recording an expense
+            lowers the pool total; whoever paid is owed that amount back from the
+            pool when you reimburse them. Season fees are tracked separately.
+            Data stays in your browser; auto-backups keep prior versions when you
+            change something.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -710,16 +710,14 @@ export function FinanceApp() {
                     <th className="px-3 py-2">Player</th>
                     <th className="px-3 py-2">Fee status</th>
                     <th className="px-3 py-2">Paid ($)</th>
-                    <th className="px-3 py-2">
-                      Owes / refund pending
-                    </th>
+                    <th className="px-3 py-2">Owed from pool</th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {totals?.playerBalances.map((b) => {
                     const unpaid = b.feeShortfall > 0.005;
-                    const settle = oweOrRefundLabel(b.netBalance);
+                    const owed = b.outOfPocket > 0.005;
                     return (
                       <tr
                         key={b.playerId}
@@ -774,23 +772,18 @@ export function FinanceApp() {
                           </button>
                         </td>
                         <td className="px-3 py-2">
-                          <div className="space-y-1">
-                            {settle.kind === "refund" ? (
+                          {owed ? (
+                            <div className="space-y-1">
                               <span className="font-medium text-[var(--accent)]">
-                                Refund pending: {formatMoney(settle.amount)}
+                                {formatMoney(b.outOfPocket)} to reimburse
                               </span>
-                            ) : settle.kind === "owe" ? (
-                              <span className="font-medium text-[var(--danger)]">
-                                Owes: {formatMoney(settle.amount)}
-                              </span>
-                            ) : (
-                              <span className="text-[var(--muted)]">Balanced</span>
-                            )}
-                            <p className="text-xs text-[var(--muted)]">
-                              Team expenses paid: {formatMoney(b.outOfPocket)} ·
-                              Your share: {formatMoney(b.expenseShare)}
-                            </p>
-                          </div>
+                              <p className="text-xs text-[var(--muted)]">
+                                Paid for the team — settle from the main pool
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-[var(--muted)]">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
@@ -808,9 +801,9 @@ export function FinanceApp() {
               </table>
             </div>
             <p className="text-xs text-[var(--muted)]">
-              Refund pending or Owes is only about team expenses: what you paid
-              out of pocket for the group vs your equal share. Season fee is
-              tracked separately in Fee status and is not treated as a refund.
+              Expenses hit the pool (see Overview). &quot;Owed from pool&quot; is
+              only what that person fronted so you can reimburse them — not an
+              extra charge to others. Season fee is separate (Fee status).
             </p>
           </section>
               </>
@@ -874,7 +867,8 @@ export function FinanceApp() {
                 <div className="max-w-2xl space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
                   <h2 className="text-lg font-semibold">Add Expenses</h2>
                   <p className="text-sm text-[var(--muted)]">
-                    Record who paid so refunds and shares stay accurate.
+                    Record who paid; they&apos;ll show as owed reimbursement from
+                    the pool. The total fund drops by this amount automatically.
                   </p>
                   {season.players.length === 0 ? (
                 <p className="text-sm text-[var(--warn)]">

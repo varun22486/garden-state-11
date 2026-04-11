@@ -6,15 +6,8 @@ export type PlayerBalance = {
   feePaid: number;
   feeRequired: number;
   feeShortfall: number;
-  /** Total team expenses this player paid (counts toward refund). */
+  /** Team expenses this player paid out of pocket — reimburse from the main pool when ready. */
   outOfPocket: number;
-  /** Equal share of all team expenses across all players. */
-  expenseShare: number;
-  /**
-   * outOfPocket − expenseShare only (season fee is separate; not refundable here).
-   * Positive → refund pending for team expenses they fronted; negative → owe toward share.
-   */
-  netBalance: number;
 };
 
 export type SeasonTotals = {
@@ -23,8 +16,6 @@ export type SeasonTotals = {
   totalInflows: number;
   totalExpenses: number;
   cashRemaining: number;
-  playerCount: number;
-  expenseShareEach: number;
   playerBalances: PlayerBalance[];
 };
 
@@ -34,6 +25,10 @@ function sumExpensesPaidByPlayer(expenses: Expense[], playerId: string): number 
     .reduce((s, e) => s + e.amount, 0);
 }
 
+/**
+ * Pool = carry-over + fees. Expenses reduce the pool (Overview).
+ * Players who paid expenses are owed reimbursement from that pool — no per-person "owe" for shares.
+ */
 export function computeSeasonTotals(season: Season): SeasonTotals {
   const totalFeesCollected = season.players.reduce((s, p) => s + p.feePaid, 0);
   const totalExpenses = season.expenses.reduce((s, e) => s + e.amount, 0);
@@ -41,16 +36,10 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
   const totalInflows = carryOver + totalFeesCollected;
   const cashRemaining = totalInflows - totalExpenses;
 
-  const playerCount = season.players.length;
-  const expenseShareEach =
-    playerCount > 0 ? totalExpenses / playerCount : 0;
-
   const playerBalances: PlayerBalance[] = season.players.map((p) => {
     const outOfPocket = sumExpensesPaidByPlayer(season.expenses, p.id);
     const feeRequired = season.initialFeePerPlayer;
     const feeShortfall = Math.max(0, feeRequired - p.feePaid);
-    const expenseShare = expenseShareEach;
-    const netBalance = outOfPocket - expenseShareEach;
 
     return {
       playerId: p.id,
@@ -59,8 +48,6 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
       feeRequired,
       feeShortfall,
       outOfPocket,
-      expenseShare,
-      netBalance,
     };
   });
 
@@ -70,8 +57,6 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
     totalInflows,
     totalExpenses,
     cashRemaining,
-    playerCount,
-    expenseShareEach,
     playerBalances,
   };
 }
@@ -79,17 +64,6 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
 /** Suggested remaining cash to carry to next season (can be overridden). */
 export function suggestedCarryOver(totals: SeasonTotals): number {
   return Math.max(0, totals.cashRemaining);
-}
-
-const EPS = 0.005;
-
-export function oweOrRefundLabel(net: number): {
-  kind: "even" | "owe" | "refund";
-  amount: number;
-} {
-  if (net > EPS) return { kind: "refund", amount: net };
-  if (net < -EPS) return { kind: "owe", amount: -net };
-  return { kind: "even", amount: 0 };
 }
 
 export function formatMoney(n: number): string {
