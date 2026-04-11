@@ -813,11 +813,11 @@ export function FinanceApp() {
               New season
             </button>
           ) : null}
-          {remoteMode && isViewer ? (
+          {remoteMode ? (
             <button
               type="button"
               onClick={() => void logout()}
-              className="min-h-11 w-full rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--muted)] sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)] sm:min-h-10 sm:w-auto"
             >
               Log out
             </button>
