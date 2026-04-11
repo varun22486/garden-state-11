@@ -6,15 +6,15 @@ export type PlayerBalance = {
   feePaid: number;
   feeRequired: number;
   feeShortfall: number;
+  /** Total team expenses this player paid (counts toward refund). */
   outOfPocket: number;
+  /** Equal share of all team expenses across all players. */
   expenseShare: number;
   /**
-   * Splitters: feePaid + outOfPocket minus equal share of total expenses.
-   * Positive → treasurer pays them from the main pool; negative → they pay into the pool.
-   * Non-splitters: null (not in pool settlement).
+   * feePaid + outOfPocket − expenseShare.
+   * Positive → refund pending from the team pool; negative → amount they owe.
    */
-  netSettlement: number | null;
-  splitsExpenses: boolean;
+  netBalance: number;
 };
 
 export type SeasonTotals = {
@@ -23,7 +23,7 @@ export type SeasonTotals = {
   totalInflows: number;
   totalExpenses: number;
   cashRemaining: number;
-  splitCount: number;
+  playerCount: number;
   expenseShareEach: number;
   playerBalances: PlayerBalance[];
 };
@@ -41,20 +41,16 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
   const totalInflows = carryOver + totalFeesCollected;
   const cashRemaining = totalInflows - totalExpenses;
 
-  const splitters = season.players.filter((p) => p.splitsExpenses);
-  const splitCount = splitters.length;
+  const playerCount = season.players.length;
   const expenseShareEach =
-    splitCount > 0 ? totalExpenses / splitCount : 0;
+    playerCount > 0 ? totalExpenses / playerCount : 0;
 
   const playerBalances: PlayerBalance[] = season.players.map((p) => {
     const outOfPocket = sumExpensesPaidByPlayer(season.expenses, p.id);
     const feeRequired = season.initialFeePerPlayer;
     const feeShortfall = Math.max(0, feeRequired - p.feePaid);
-    const expenseShare = p.splitsExpenses ? expenseShareEach : 0;
-    const contribution = p.feePaid + outOfPocket;
-    const netSettlement: number | null = p.splitsExpenses
-      ? contribution - expenseShareEach
-      : null;
+    const expenseShare = expenseShareEach;
+    const netBalance = p.feePaid + outOfPocket - expenseShareEach;
 
     return {
       playerId: p.id,
@@ -64,8 +60,7 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
       feeShortfall,
       outOfPocket,
       expenseShare,
-      netSettlement,
-      splitsExpenses: p.splitsExpenses,
+      netBalance,
     };
   });
 
@@ -75,7 +70,7 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
     totalInflows,
     totalExpenses,
     cashRemaining,
-    splitCount,
+    playerCount,
     expenseShareEach,
     playerBalances,
   };
@@ -86,56 +81,15 @@ export function suggestedCarryOver(totals: SeasonTotals): number {
   return Math.max(0, totals.cashRemaining);
 }
 
-export type PoolSettlementLine = {
-  playerId: string;
-  name: string;
+const EPS = 0.005;
+
+export function oweOrRefundLabel(net: number): {
+  kind: "even" | "owe" | "refund";
   amount: number;
-};
-
-const ROUND = (n: number) => Math.round(n * 100) / 100;
-
-export type PoolSettlements = {
-  /** Treasurer pays these people from the main pool (reimbursement / net credit). */
-  receiveFromPool: PoolSettlementLine[];
-  /** These people pay into the main pool (net shortfall vs fair share). */
-  payToPool: PoolSettlementLine[];
-  totalPayOut: number;
-  totalCollect: number;
-};
-
-/**
- * All settlement runs through the team pool (treasurer): no person-to-person payments.
- */
-export function computePoolSettlements(balances: PlayerBalance[]): PoolSettlements {
-  const receiveFromPool: PoolSettlementLine[] = [];
-  const payToPool: PoolSettlementLine[] = [];
-
-  for (const b of balances) {
-    if (b.netSettlement === null) continue;
-    if (b.netSettlement > 0.005) {
-      receiveFromPool.push({
-        playerId: b.playerId,
-        name: b.name,
-        amount: ROUND(b.netSettlement),
-      });
-    } else if (b.netSettlement < -0.005) {
-      payToPool.push({
-        playerId: b.playerId,
-        name: b.name,
-        amount: ROUND(-b.netSettlement),
-      });
-    }
-  }
-
-  receiveFromPool.sort((a, x) => x.amount - a.amount);
-  payToPool.sort((a, x) => x.amount - a.amount);
-
-  const totalPayOut = ROUND(
-    receiveFromPool.reduce((s, x) => s + x.amount, 0),
-  );
-  const totalCollect = ROUND(payToPool.reduce((s, x) => s + x.amount, 0));
-
-  return { receiveFromPool, payToPool, totalPayOut, totalCollect };
+} {
+  if (net > EPS) return { kind: "refund", amount: net };
+  if (net < -EPS) return { kind: "owe", amount: -net };
+  return { kind: "even", amount: 0 };
 }
 
 export function formatMoney(n: number): string {
@@ -162,12 +116,12 @@ export function parsePlayerNamesBlob(text: string): string[] {
 }
 
 /** Default player row from name (fee starts at 0). */
-export function makePlayer(name: string, splitsExpenses = true): Player {
+export function makePlayer(name: string): Player {
   return {
     id: newId(),
     name,
     feePaid: 0,
-    splitsExpenses,
+    splitsExpenses: true,
     notes: undefined,
   };
 }

@@ -11,7 +11,7 @@ export type Player = {
   name: string;
   /** Amount this player has paid toward the season fee (can be partial). */
   feePaid: number;
-  /** If false, excluded from equal split of expenses (e.g. injured / guest). */
+  /** Legacy field; all players share expenses equally in calculations. */
   splitsExpenses: boolean;
   notes?: string;
 };

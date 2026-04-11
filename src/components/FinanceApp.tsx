@@ -1,14 +1,22 @@
 "use client";
 
 import {
-  computePoolSettlements,
   computeSeasonTotals,
   formatMoney,
   makePlayer,
   newId,
+  oweOrRefundLabel,
   parsePlayerNamesBlob,
   suggestedCarryOver,
 } from "@/lib/finance";
+import {
+  appendSnapshot,
+  clearSnapshots,
+  loadSnapshots,
+  removeSnapshot,
+  SNAPSHOT_MAX_STORED,
+  type StateSnapshot,
+} from "@/lib/snapshots";
 import {
   exportStateJson,
   findSeason,
@@ -35,12 +43,23 @@ function useFinanceState() {
   }, [state, ready]);
 
   const update = useCallback((fn: (s: AppState) => AppState) => {
-    setState((prev) => (prev ? fn(prev) : prev));
+    setState((prev) => {
+      if (!prev) return prev;
+      appendSnapshot(prev);
+      return fn(prev);
+    });
+  }, []);
+
+  const replaceState = useCallback((next: AppState) => {
+    setState((prev) => {
+      if (prev) appendSnapshot(prev);
+      return next;
+    });
   }, []);
 
   return {
     state,
-    setState,
+    replaceState,
     update,
     ready: ready && state !== null,
   };
@@ -81,7 +100,7 @@ function Card({
 }
 
 export function FinanceApp() {
-  const { state, setState, update, ready } = useFinanceState();
+  const { state, replaceState, update, ready } = useFinanceState();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showNewSeason, setShowNewSeason] = useState(false);
@@ -108,9 +127,10 @@ export function FinanceApp() {
     () => (season ? computeSeasonTotals(season) : null),
     [season],
   );
-  const poolSettlements = useMemo(
-    () => (totals ? computePoolSettlements(totals.playerBalances) : null),
-    [totals],
+  const [snapRev, setSnapRev] = useState(0);
+  const snapshots = useMemo(
+    () => loadSnapshots(),
+    [state, snapRev],
   );
 
   useEffect(() => {
@@ -351,17 +371,44 @@ export function FinanceApp() {
         const imported = importStateJson(String(reader.result));
         if (
           !confirm(
-            "Replace all data on this device with the backup? Current data will be lost unless you exported it first.",
+            "Replace all data on this device with the backup? Current data will be snapshotted first.",
           )
         )
           return;
-        setState(imported);
-        saveState(imported);
+        replaceState(imported);
+        setSnapRev((x) => x + 1);
       } catch {
         alert("Could not read that file.");
       }
     };
     reader.readAsText(f);
+  };
+
+  const restoreFromSnapshot = (snap: StateSnapshot) => {
+    if (
+      !confirm(
+        "Restore this auto-backup? Your current data is saved as a new backup first.",
+      )
+    )
+      return;
+    replaceState(snap.state);
+    setSnapRev((x) => x + 1);
+  };
+
+  const deleteSnapshotById = (id: string) => {
+    removeSnapshot(id);
+    setSnapRev((x) => x + 1);
+  };
+
+  const clearSnapshotHistory = () => {
+    if (
+      !confirm(
+        "Remove all auto-backup snapshots from this browser? Your current data is unchanged.",
+      )
+    )
+      return;
+    clearSnapshots();
+    setSnapRev((x) => x + 1);
   };
 
   if (!ready || !state) {
@@ -380,9 +427,10 @@ export function FinanceApp() {
             Garden State 11
           </h1>
           <p className="mt-1 max-w-xl text-sm text-[var(--muted)]">
-            Track season fees and expenses: reimbursements run through the main
-            team pool (treasurer pays out; players pay shortfalls into the pool).
-            Data stays in your browser until you export a backup.
+            Track fees and who paid team expenses. Expenses you record under a
+            player count toward their refund; everyone owes an equal share of
+            total expenses. Data stays in your browser; auto-backups keep prior
+            versions when you change something.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -673,6 +721,58 @@ export function FinanceApp() {
             ) : null}
           </section>
 
+          <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold">Auto-backups</h3>
+              {snapshots.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={clearSnapshotHistory}
+                  className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                >
+                  Clear history
+                </button>
+              ) : null}
+            </div>
+            <p className="text-sm text-[var(--muted)]">
+              Each time you save or change data, the previous full state is kept
+              here (last {SNAPSHOT_MAX_STORED} versions). Restore if you need to
+              undo.
+            </p>
+            {snapshots.length === 0 ? (
+              <p className="text-sm text-[var(--muted)]">No snapshots yet.</p>
+            ) : (
+              <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
+                {snapshots.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                  >
+                    <span className="text-[var(--muted)]">
+                      {new Date(s.savedAt).toLocaleString()}
+                    </span>
+                    <span className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => restoreFromSnapshot(s)}
+                        className="text-xs font-medium text-[var(--accent)] hover:underline"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSnapshotById(s.id)}
+                        className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                      >
+                        Remove
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Players & fees</h3>
@@ -685,20 +785,22 @@ export function FinanceApp() {
               </button>
             </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-              <table className="w-full min-w-[720px] text-left text-sm">
+              <table className="w-full min-w-[640px] text-left text-sm">
                 <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                   <tr>
                     <th className="px-3 py-2">Player</th>
                     <th className="px-3 py-2">Fee status</th>
                     <th className="px-3 py-2">Paid ($)</th>
-                    <th className="px-3 py-2">Split costs?</th>
-                    <th className="px-3 py-2">Net vs pool</th>
+                    <th className="px-3 py-2">
+                      Owes / refund pending
+                    </th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {totals?.playerBalances.map((b) => {
                     const unpaid = b.feeShortfall > 0.005;
+                    const settle = oweOrRefundLabel(b.netBalance);
                     return (
                       <tr
                         key={b.playerId}
@@ -753,30 +855,23 @@ export function FinanceApp() {
                           </button>
                         </td>
                         <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            checked={b.splitsExpenses}
-                            onChange={(e) =>
-                              updatePlayer(b.playerId, {
-                                splitsExpenses: e.target.checked,
-                              })
-                            }
-                          />
-                        </td>
-                        <td className="px-3 py-2 tabular-nums">
-                          {b.netSettlement === null ? (
-                            <span className="text-[var(--muted)]">—</span>
-                          ) : b.netSettlement > 0.005 ? (
-                            <span className="text-[var(--accent)]">
-                              +{formatMoney(b.netSettlement)} (from pool)
-                            </span>
-                          ) : b.netSettlement < -0.005 ? (
-                            <span className="text-[var(--danger)]">
-                              {formatMoney(b.netSettlement)} (to pool)
-                            </span>
-                          ) : (
-                            <span className="text-[var(--muted)]">Even</span>
-                          )}
+                          <div className="space-y-1">
+                            {settle.kind === "refund" ? (
+                              <span className="font-medium text-[var(--accent)]">
+                                Refund pending: {formatMoney(settle.amount)}
+                              </span>
+                            ) : settle.kind === "owe" ? (
+                              <span className="font-medium text-[var(--danger)]">
+                                Owes: {formatMoney(settle.amount)}
+                              </span>
+                            ) : (
+                              <span className="text-[var(--muted)]">Balanced</span>
+                            )}
+                            <p className="text-xs text-[var(--muted)]">
+                              Team expenses paid: {formatMoney(b.outOfPocket)} ·
+                              Your share: {formatMoney(b.expenseShare)}
+                            </p>
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
@@ -794,14 +889,14 @@ export function FinanceApp() {
               </table>
             </div>
             <p className="text-xs text-[var(--muted)]">
-              &quot;Net vs pool&quot;: fees paid + team expenses you fronted − your
-              equal share of all expenses (splitters only). Positive = treasurer
-              pays you from the pool; negative = you pay into the pool.
+              Refund pending or Owes compares what you put in (season fee + team
+              expenses you paid) to your equal share of all recorded expenses.
+              Add expenses under the person who paid so their refund builds up.
             </p>
           </section>
 
-          <section className="grid gap-6 lg:grid-cols-2">
-            <div className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+          <section>
+            <div className="max-w-2xl space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
               <h3 className="font-semibold">Add expense</h3>
               {season.players.length === 0 ? (
                 <p className="text-sm text-[var(--warn)]">
@@ -878,89 +973,6 @@ export function FinanceApp() {
               >
                 Record expense
               </button>
-            </div>
-
-            <div className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-              <h3 className="font-semibold">Settle through the main pool</h3>
-              <p className="text-sm text-[var(--muted)]">
-                Treasurer pays reimbursements from the team account; players
-                with a shortfall pay into the same pool—not to each other.
-              </p>
-              {!poolSettlements ||
-              (poolSettlements.receiveFromPool.length === 0 &&
-                poolSettlements.payToPool.length === 0) ? (
-                <p className="text-sm text-[var(--muted)]">
-                  Everyone is square within a few cents, or there are no
-                  splitters yet.
-                </p>
-              ) : (
-                <div className="space-y-4 text-sm">
-                  {poolSettlements.receiveFromPool.length > 0 ? (
-                    <div>
-                      <p className="mb-2 font-medium text-[var(--accent)]">
-                        Pay from pool
-                      </p>
-                      <ul className="space-y-2">
-                        {poolSettlements.receiveFromPool.map((line) => (
-                          <li
-                            key={line.playerId}
-                            className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                          >
-                            Pool →{" "}
-                            <span className="font-medium">{line.name}</span>:{" "}
-                            <span className="tabular-nums font-semibold">
-                              {formatMoney(line.amount)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      <p className="mt-2 text-xs text-[var(--muted)]">
-                        Total pay-out:{" "}
-                        <span className="tabular-nums font-medium text-[var(--foreground)]">
-                          {formatMoney(poolSettlements.totalPayOut)}
-                        </span>
-                      </p>
-                    </div>
-                  ) : null}
-                  {poolSettlements.payToPool.length > 0 ? (
-                    <div>
-                      <p className="mb-2 font-medium text-[var(--danger)]">
-                        Collect into pool
-                      </p>
-                      <ul className="space-y-2">
-                        {poolSettlements.payToPool.map((line) => (
-                          <li
-                            key={line.playerId}
-                            className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                          >
-                            <span className="font-medium">{line.name}</span> →
-                            Pool:{" "}
-                            <span className="tabular-nums font-semibold">
-                              {formatMoney(line.amount)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      <p className="mt-2 text-xs text-[var(--muted)]">
-                        Total to collect:{" "}
-                        <span className="tabular-nums font-medium text-[var(--foreground)]">
-                          {formatMoney(poolSettlements.totalCollect)}
-                        </span>
-                      </p>
-                    </div>
-                  ) : null}
-                  {totals ? (
-                    <p className="rounded-lg border border-[var(--border)]/80 bg-[var(--background)] px-3 py-2 text-xs text-[var(--muted)]">
-                      Cash remaining in pool (after recorded expenses):{" "}
-                      <span className="tabular-nums font-medium text-[var(--foreground)]">
-                        {formatMoney(totals.cashRemaining)}
-                      </span>
-                      . Use the bank balance as the source of truth when paying
-                      people out.
-                    </p>
-                  ) : null}
-                </div>
-              )}
             </div>
           </section>
 
