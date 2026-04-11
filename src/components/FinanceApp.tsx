@@ -18,6 +18,7 @@ import {
   SNAPSHOT_MAX_STORED,
   type StateSnapshot,
 } from "@/lib/snapshots";
+import { isValidNtfyTopic } from "@/lib/expense-notify";
 import {
   exportStateJson,
   findSeason,
@@ -124,6 +125,11 @@ export function FinanceApp() {
     new Date().toISOString().slice(0, 10),
   );
   const [expenseNtfyTopicDraft, setExpenseNtfyTopicDraft] = useState("");
+  const [auditFlash, setAuditFlash] = useState<{
+    message: string;
+    variant: "ok" | "error";
+  } | null>(null);
+  const auditFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [editCarry, setEditCarry] = useState("");
   const [editFee, setEditFee] = useState("");
@@ -247,6 +253,29 @@ export function FinanceApp() {
   useEffect(() => {
     setExpenseNtfyTopicDraft(notifyNtfyTopicFromState);
   }, [notifyNtfyTopicFromState]);
+
+  const showAuditFlash = useCallback(
+    (message: string, variant: "ok" | "error" = "ok") => {
+      if (auditFlashTimerRef.current) {
+        clearTimeout(auditFlashTimerRef.current);
+        auditFlashTimerRef.current = null;
+      }
+      setAuditFlash({ message, variant });
+      auditFlashTimerRef.current = setTimeout(() => {
+        setAuditFlash(null);
+        auditFlashTimerRef.current = null;
+      }, 3200);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (auditFlashTimerRef.current) {
+        clearTimeout(auditFlashTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setActiveTab("dashboard");
@@ -483,10 +512,32 @@ export function FinanceApp() {
   const saveExpenseNtfyTopic = () => {
     if (!state) return;
     const t = expenseNtfyTopicDraft.trim();
+    if (t.length === 0) {
+      update((app) => ({
+        ...app,
+        expenseNtfyTopic: undefined,
+      }));
+      showAuditFlash("Saved — notifications off until you set a topic again.", "ok");
+      return;
+    }
+    if (!isValidNtfyTopic(t)) {
+      showAuditFlash(
+        "Topic must be 1–64 characters: letters, numbers, underscores, or hyphens only.",
+        "error",
+      );
+      return;
+    }
+    const saved = t.slice(0, 64);
     update((app) => ({
       ...app,
-      expenseNtfyTopic: t.length > 0 ? t.slice(0, 64) : undefined,
+      expenseNtfyTopic: saved,
     }));
+    showAuditFlash(
+      remoteMode
+        ? `Topic “${saved}” saved. Open the ntfy app, subscribe to that exact topic, then record an expense to test.`
+        : `Topic “${saved}” saved locally. Push alerts only run on the deployed app (remote mode).`,
+      "ok",
+    );
   };
 
   const generateExpenseNtfyTopic = () => {
@@ -503,8 +554,13 @@ export function FinanceApp() {
     if (!season) return;
     const fee = Number.parseFloat(editFee);
     const carry = Number.parseFloat(editCarry);
-    if (!Number.isFinite(fee) || fee < 0 || !Number.isFinite(carry) || carry < 0)
+    if (!Number.isFinite(fee) || fee < 0 || !Number.isFinite(carry) || carry < 0) {
+      showAuditFlash(
+        "Fee and carry-over must be valid numbers (0 or greater).",
+        "error",
+      );
       return;
+    }
     update((app) => ({
       ...app,
       seasons: app.seasons.map((x) =>
@@ -517,6 +573,7 @@ export function FinanceApp() {
           : x,
       ),
     }));
+    showAuditFlash("Season settings saved.", "ok");
   };
 
   const pullCarryFromPrior = () => {
@@ -1658,6 +1715,18 @@ export function FinanceApp() {
 
             {activeTab === "audit" ? (
               <div className="space-y-6">
+                {auditFlash ? (
+                  <div
+                    role="status"
+                    className={
+                      auditFlash.variant === "error"
+                        ? "rounded-xl border border-[var(--danger)]/50 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--foreground)]"
+                        : "rounded-xl border border-[var(--accent)]/45 bg-[var(--accent)]/12 px-4 py-3 text-sm text-[var(--foreground)]"
+                    }
+                  >
+                    {auditFlash.message}
+                  </div>
+                ) : null}
                 <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
                   <h2 className="text-lg font-semibold">Audit</h2>
                   <p className="mt-1 text-sm text-[var(--muted)]">
@@ -1755,7 +1824,7 @@ export function FinanceApp() {
                     </a>
                     : install the ntfy app, subscribe to the{" "}
                     <strong className="text-[var(--foreground)]">exact topic</strong>{" "}
-                    you save here (8–64 chars: letters, numbers,{" "}
+                    you save here (1–64 chars: letters, numbers,{" "}
                     <code className="rounded bg-[var(--background)] px-1 font-mono text-xs">
                       _
                     </code>

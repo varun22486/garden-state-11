@@ -10,8 +10,13 @@ export type ExpenseNotifyContext = {
   role: "admin" | "viewer";
 };
 
-/** ntfy topic: letters, digits, underscore, hyphen; length for a usable secret. */
-const TOPIC_RE = /^[a-zA-Z0-9_-]{8,64}$/;
+/** ntfy topic: letters, digits, underscore, hyphen (ntfy rules);1–64 chars. */
+const TOPIC_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+export function isValidNtfyTopic(topic: string): boolean {
+  const t = topic.trim();
+  return t.length > 0 && TOPIC_RE.test(t);
+}
 
 /**
  * Topic path for ntfy (Audit → Expense notifications), then env EXPENSE_NTFY_TOPIC.
