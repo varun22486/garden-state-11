@@ -23,7 +23,7 @@ import {
   importStateJson,
   normalizeAppState,
 } from "@/lib/storage";
-import type { AppState, Expense, Player, Season } from "@/lib/types";
+import type { Expense, Player, Season } from "@/lib/types";
 import {
   DEFAULT_EXPENSE_CATEGORIES,
   expenseCategoryLabel,
@@ -123,10 +123,7 @@ export function FinanceApp() {
   const [serverArchives, setServerArchives] = useState<
     { id: string; savedAt: string }[]
   >([]);
-  const snapshots = useMemo(
-    () => loadSnapshots(),
-    [state, snapRev],
-  );
+  const snapshots = useMemo(() => loadSnapshots(), [snapRev]);
 
   const refreshServerArchives = useCallback(async () => {
     if (!remoteMode) return;
@@ -167,6 +164,7 @@ export function FinanceApp() {
         season.players.some((p) => p.id === prev) ? prev : first,
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- narrow deps; keep Audit drafts when only players change
   }, [season?.id, season?.carryOverAmount, season?.initialFeePerPlayer]);
 
   useEffect(() => {
@@ -291,14 +289,19 @@ export function FinanceApp() {
     update((app) => {
       const s = app.seasons.find((x) => x.id === sid);
       if (!s) return app;
-      let patch2: Partial<Player> = { ...patch };
-      if (patch.reimbursementSettled !== undefined) {
-        const oop = sumExpensesPaidByPlayer(s.expenses, playerId);
-        patch2.reimbursementSettled = Math.max(
-          0,
-          Math.min(oop, patch.reimbursementSettled),
-        );
-      }
+      const patch2: Partial<Player> =
+        patch.reimbursementSettled !== undefined
+          ? {
+              ...patch,
+              reimbursementSettled: Math.max(
+                0,
+                Math.min(
+                  sumExpensesPaidByPlayer(s.expenses, playerId),
+                  patch.reimbursementSettled,
+                ),
+              ),
+            }
+          : patch;
       return {
         ...app,
         seasons: app.seasons.map((x) =>

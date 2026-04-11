@@ -114,7 +114,7 @@ export function useFinanceState() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [FINANCE_REMOTE, ready, state, authRequired, runRemotePut]);
+  }, [ready, state, authRequired, runRemotePut]);
 
   const login = useCallback(
     async (password: string) => {
