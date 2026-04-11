@@ -104,38 +104,46 @@ export async function sendExpenseNtfyNotification(
 ): Promise<void> {
   const topic = resolveNtfyTopic(state);
   if (!topic) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn(
-        "[expense-notify] No ntfy topic — set Audit → Expense notifications or EXPENSE_NTFY_TOPIC",
-      );
-    }
+    console.warn(
+      "[expense-notify] Skipped: no topic (Audit → Expense notifications or EXPENSE_NTFY_TOPIC)",
+    );
     return;
   }
 
   const base =
     process.env.NTFY_BASE_URL?.trim().replace(/\/+$/, "") || "https://ntfy.sh";
-  const url = `${base}/${encodeURIComponent(topic)}`;
+  /** JSON publish to server root — same as https://docs.ntfy.sh/publish/ */
+  const publishUrl = `${base}/`;
   const amount = formatMoney(ctx.expense.amount);
   const title = `[GS11] ${amount} — ${ctx.expense.description.slice(0, 56)}${ctx.expense.description.length > 56 ? "…" : ""}`;
-  const body = buildExpenseNtfyBody(ctx);
+  const message = buildExpenseNtfyBody(ctx);
+
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 12_000);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(publishUrl, {
       method: "POST",
       headers: {
-        Title: title,
-        Priority: "default",
-        Tags: "money,receipt",
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": "application/json; charset=utf-8",
       },
-      body,
+      body: JSON.stringify({
+        topic,
+        title,
+        message,
+        tags: ["money"],
+        priority: 3,
+      }),
+      signal: ac.signal,
     });
+    clearTimeout(t);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error("[expense-notify] ntfy error", res.status, errText);
     }
   } catch (e) {
+    clearTimeout(t);
     console.error("[expense-notify] Failed to send", e);
   }
 }

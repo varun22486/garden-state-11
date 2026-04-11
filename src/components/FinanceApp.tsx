@@ -350,7 +350,7 @@ export function FinanceApp() {
       category: expenseCategory,
     };
 
-    if (remoteMode && isViewer) {
+    if (remoteMode) {
       setExpenseBusy(true);
       try {
         const ok = await postExpense(season.id, e);
