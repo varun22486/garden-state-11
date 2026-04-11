@@ -119,10 +119,28 @@ export function FinanceApp() {
     [season],
   );
   const [snapRev, setSnapRev] = useState(0);
+  const [serverArchives, setServerArchives] = useState<
+    { id: string; savedAt: string }[]
+  >([]);
   const snapshots = useMemo(
     () => loadSnapshots(),
     [state, snapRev],
   );
+
+  const refreshServerArchives = useCallback(async () => {
+    if (!remoteMode) return;
+    const res = await fetch("/api/finance/snapshots", { credentials: "include" });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      snapshots?: { id: string; savedAt: string }[];
+    };
+    setServerArchives(data.snapshots ?? []);
+  }, [remoteMode]);
+
+  useEffect(() => {
+    if (activeTab !== "audit" || !remoteMode) return;
+    void refreshServerArchives();
+  }, [activeTab, remoteMode, refreshServerArchives, snapRev]);
   /** Oldest first so running total reads naturally top → bottom. */
   const expensesHistoryRows = useMemo(() => {
     if (!season) return [];
@@ -440,6 +458,64 @@ export function FinanceApp() {
       return;
     clearSnapshots();
     setSnapRev((x) => x + 1);
+  };
+
+  const restoreFromServerArchive = async (id: string) => {
+    if (
+      !confirm(
+        "Restore this archived backup from the server? Your current data is saved as a new backup first.",
+      )
+    )
+      return;
+    const res = await fetch(
+      `/api/finance/snapshots/${encodeURIComponent(id)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) {
+      alert("Could not load that backup.");
+      return;
+    }
+    const data = (await res.json()) as { state?: unknown };
+    if (data.state == null) {
+      alert("Invalid backup response.");
+      return;
+    }
+    replaceState(normalizeAppState(data.state));
+    setSnapRev((x) => x + 1);
+    void refreshServerArchives();
+    setTimeout(() => {
+      void flushRemoteSave();
+    }, 0);
+  };
+
+  const deleteServerArchive = async (id: string) => {
+    const res = await fetch(
+      `/api/finance/snapshots/${encodeURIComponent(id)}`,
+      { method: "DELETE", credentials: "include" },
+    );
+    if (!res.ok) {
+      alert("Could not delete that backup.");
+      return;
+    }
+    void refreshServerArchives();
+  };
+
+  const clearServerArchives = async () => {
+    if (
+      !confirm(
+        "Delete all archived auto-backups on the server? Recent backups in this browser are unchanged.",
+      )
+    )
+      return;
+    await Promise.all(
+      serverArchives.map((a) =>
+        fetch(`/api/finance/snapshots/${encodeURIComponent(a.id)}`, {
+          method: "DELETE",
+          credentials: "include",
+        }),
+      ),
+    );
+    void refreshServerArchives();
   };
 
   const addExpenseType = () => {
@@ -1328,16 +1404,22 @@ export function FinanceApp() {
                         onClick={clearSnapshotHistory}
                         className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
                       >
-                        Clear history
+                        Clear local
                       </button>
                     ) : null}
                   </div>
                   <p className="text-sm text-[var(--muted)]">
-                    Each change keeps the previous full state (last{" "}
-                    {SNAPSHOT_MAX_STORED} versions).
+                    Each change saves the previous full state. This browser keeps the{" "}
+                    {SNAPSHOT_MAX_STORED} most recent backups
+                    {remoteMode
+                      ? "; older ones are archived on the team server when you’re signed in."
+                      : "."}
+                  </p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                    Recent ({snapshots.length}/{SNAPSHOT_MAX_STORED} in this browser)
                   </p>
                   {snapshots.length === 0 ? (
-                    <p className="text-sm text-[var(--muted)]">No snapshots yet.</p>
+                    <p className="text-sm text-[var(--muted)]">No local snapshots yet.</p>
                   ) : (
                     <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
                       {snapshots.map((s) => (
@@ -1368,6 +1450,64 @@ export function FinanceApp() {
                       ))}
                     </ul>
                   )}
+
+                  {remoteMode ? (
+                    <div className="mt-6 border-t border-[var(--border)] pt-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                          Archived on server ({serverArchives.length})
+                        </p>
+                        {serverArchives.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => void clearServerArchives()}
+                            className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                          >
+                            Clear archived
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        Older auto-backups (evicted from the {SNAPSHOT_MAX_STORED}-slot
+                        list here) while you
+                        were signed in. Same team password; not tied to one device.
+                      </p>
+                      {serverArchives.length === 0 ? (
+                        <p className="mt-2 text-sm text-[var(--muted)]">
+                          No server archives yet.
+                        </p>
+                      ) : (
+                        <ul className="mt-2 max-h-64 space-y-2 overflow-y-auto text-sm">
+                          {serverArchives.map((s) => (
+                            <li
+                              key={s.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                            >
+                              <span className="text-[var(--muted)]">
+                                {new Date(s.savedAt).toLocaleString()}
+                              </span>
+                              <span className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void restoreFromServerArchive(s.id)}
+                                  className="text-xs font-medium text-[var(--accent)] hover:underline"
+                                >
+                                  Restore
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteServerArchive(s.id)}
+                                  className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                                >
+                                  Remove
+                                </button>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
                 </section>
               </div>
             ) : null}

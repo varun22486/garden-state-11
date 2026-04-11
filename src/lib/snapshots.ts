@@ -1,7 +1,11 @@
 import type { AppState } from "./types";
 
+import { archiveSnapshotIfRemote } from "./snapshot-archive";
+
 const SNAPSHOTS_KEY = "gs11-finance-snapshots-v1";
-export const SNAPSHOT_MAX_STORED = 40;
+
+/** Max auto-backups kept in this browser; older ones are sent to the server when remote mode is on. */
+export const SNAPSHOT_MAX_STORED = 5;
 
 export type StateSnapshot = {
   id: string;
@@ -28,13 +32,19 @@ export function appendSnapshot(previous: AppState): void {
       savedAt: new Date().toISOString(),
       state: JSON.parse(JSON.stringify(previous)) as AppState,
     });
-    while (list.length > SNAPSHOT_MAX_STORED) list.pop();
+    while (list.length > SNAPSHOT_MAX_STORED) {
+      const evicted = list.pop();
+      if (evicted) archiveSnapshotIfRemote(evicted);
+    }
     localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(list));
   } catch {
     try {
       const raw = localStorage.getItem(SNAPSHOTS_KEY);
       const list: StateSnapshot[] = raw ? JSON.parse(raw) : [];
-      while (list.length > 5) list.pop();
+      while (list.length > SNAPSHOT_MAX_STORED) {
+        const evicted = list.pop();
+        if (evicted) archiveSnapshotIfRemote(evicted);
+      }
       localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(list));
     } catch {
       /* ignore */
