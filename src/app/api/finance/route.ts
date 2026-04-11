@@ -1,7 +1,13 @@
 import {
   FINANCE_SESSION_COOKIE_NAME,
   getFinanceRoleFromCookie,
+  type FinanceRole,
 } from "@/lib/auth-cookie";
+import {
+  listNewExpenses,
+  resolveExpenseNotifyContextBySeasonId,
+  sendExpenseNtfyNotification,
+} from "@/lib/expense-notify";
 import { defaultAppState, normalizeAppState } from "@/lib/storage";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AppState } from "@/lib/types";
@@ -9,6 +15,31 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const DOC_ID = "garden-state-11";
+
+const MAX_EXPENSE_NOTIFY_PER_SAVE = 25;
+
+async function notifyNewExpensesFromPut(
+  prev: AppState | null,
+  next: AppState,
+  role: FinanceRole,
+) {
+  const added = listNewExpenses(prev, next);
+  const slice = added.slice(0, MAX_EXPENSE_NOTIFY_PER_SAVE);
+  for (const { seasonId, expense } of slice) {
+    const ctx = resolveExpenseNotifyContextBySeasonId(
+      next,
+      seasonId,
+      expense,
+      role,
+    );
+    if (ctx) await sendExpenseNtfyNotification(ctx, next);
+  }
+  if (added.length > slice.length) {
+    console.warn(
+      `[expense-notify] Skipped ${added.length - slice.length} notification(s); max ${MAX_EXPENSE_NOTIFY_PER_SAVE} per save`,
+    );
+  }
+}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -150,6 +181,7 @@ export async function PUT(req: Request) {
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
 
+      await notifyNewExpensesFromPut(null, normalized, role);
       return NextResponse.json({ ok: true, revision: 1 });
     }
 
@@ -201,6 +233,11 @@ export async function PUT(req: Request) {
       );
     }
 
+    await notifyNewExpensesFromPut(
+      normalizeAppState(existing.payload),
+      normalized,
+      role,
+    );
     return NextResponse.json({ ok: true, revision: updatedRows[0].revision });
   } catch (e) {
     console.error(e);

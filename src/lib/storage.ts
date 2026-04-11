@@ -45,11 +45,20 @@ export function normalizeAppState(raw: unknown): AppState {
     expenseCategories = DEFAULT_EXPENSE_CATEGORIES.map((c) => ({ ...c }));
   }
 
+  let expenseNtfyTopic: string | undefined;
+  if (typeof r.expenseNtfyTopic === "string") {
+    const t = r.expenseNtfyTopic.trim();
+    if (t.length > 0) {
+      expenseNtfyTopic = t.slice(0, 64);
+    }
+  }
+
   return {
     version: 1,
     seasons,
     currentSeasonId,
     expenseCategories,
+    expenseNtfyTopic,
   };
 }
 

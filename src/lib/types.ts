@@ -50,6 +50,11 @@ export type AppState = {
   currentSeasonId: string | null;
   /** User-editable expense type list (Audit → Expense types). */
   expenseCategories: ExpenseCategoryDef[];
+  /**
+   * ntfy.sh topic for push alerts when an expense is added (Audit → Expense notifications).
+   * Subscribe to the same topic in the ntfy app. Falls back to EXPENSE_NTFY_TOPIC env.
+   */
+  expenseNtfyTopic?: string;
 };
 
 /** Seeded for new installs and when `expenseCategories` is missing in storage. */

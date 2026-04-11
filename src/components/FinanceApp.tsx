@@ -123,6 +123,7 @@ export function FinanceApp() {
   const [expenseDate, setExpenseDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
+  const [expenseNtfyTopicDraft, setExpenseNtfyTopicDraft] = useState("");
 
   const [editCarry, setEditCarry] = useState("");
   const [editFee, setEditFee] = useState("");
@@ -241,6 +242,11 @@ export function FinanceApp() {
         : state.expenseCategories[0].id,
     );
   }, [state]);
+
+  const notifyNtfyTopicFromState = state?.expenseNtfyTopic ?? "";
+  useEffect(() => {
+    setExpenseNtfyTopicDraft(notifyNtfyTopicFromState);
+  }, [notifyNtfyTopicFromState]);
 
   useEffect(() => {
     setActiveTab("dashboard");
@@ -472,6 +478,25 @@ export function FinanceApp() {
         };
       }),
     }));
+  };
+
+  const saveExpenseNtfyTopic = () => {
+    if (!state) return;
+    const t = expenseNtfyTopicDraft.trim();
+    update((app) => ({
+      ...app,
+      expenseNtfyTopic: t.length > 0 ? t.slice(0, 64) : undefined,
+    }));
+  };
+
+  const generateExpenseNtfyTopic = () => {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const bytes = crypto.getRandomValues(new Uint8Array(18));
+    let s = "gs11-";
+    for (let i = 0; i < bytes.length; i++) {
+      s += chars[bytes[i]! % chars.length];
+    }
+    setExpenseNtfyTopicDraft(s);
   };
 
   const saveSeasonMeta = () => {
@@ -1713,6 +1738,67 @@ export function FinanceApp() {
                         </button>
                       </div>
                     ) : null}
+                  </div>
+                </section>
+
+                <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
+                  <h3 className="font-semibold">Expense notifications</h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    Free push alerts via{" "}
+                    <a
+                      href="https://ntfy.sh"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--accent)] underline-offset-2 hover:underline"
+                    >
+                      ntfy.sh
+                    </a>
+                    : install the ntfy app, subscribe to the{" "}
+                    <strong className="text-[var(--foreground)]">exact topic</strong>{" "}
+                    you save here (8–64 chars: letters, numbers,{" "}
+                    <code className="rounded bg-[var(--background)] px-1 font-mono text-xs">
+                      _
+                    </code>
+                    ,{" "}
+                    <code className="rounded bg-[var(--background)] px-1 font-mono text-xs">
+                      -
+                    </code>
+                    ). Anyone who knows the topic can see messages — use a long random
+                    topic. Optional server fallback:{" "}
+                    <code className="rounded bg-[var(--background)] px-1 font-mono text-xs">
+                      EXPENSE_NTFY_TOPIC
+                    </code>
+                    .
+                  </p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                    <label className="block min-w-[200px] flex-1 text-sm">
+                      <span className="text-[var(--muted)]">ntfy topic</span>
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm sm:min-h-10"
+                        value={expenseNtfyTopicDraft}
+                        onChange={(e) =>
+                          setExpenseNtfyTopicDraft(e.target.value)
+                        }
+                        placeholder="gs11-your-secret-topic"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={generateExpenseNtfyTopic}
+                      className="min-h-11 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm sm:min-h-10"
+                    >
+                      Generate topic
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveExpenseNtfyTopic}
+                      className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white sm:min-h-10"
+                    >
+                      Save topic
+                    </button>
                   </div>
                 </section>
 

@@ -1,7 +1,12 @@
 import {
   FINANCE_SESSION_COOKIE_NAME,
   getFinanceRoleFromCookie,
+  type FinanceRole,
 } from "@/lib/auth-cookie";
+import {
+  resolveExpenseNotifyContextBySeasonId,
+  sendExpenseNtfyNotification,
+} from "@/lib/expense-notify";
 import { defaultAppState, normalizeAppState } from "@/lib/storage";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AppState, Expense } from "@/lib/types";
@@ -9,6 +14,21 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const DOC_ID = "garden-state-11";
+
+async function notifyExpenseAdded(
+  normalized: AppState,
+  seasonId: string,
+  expense: Expense,
+  role: FinanceRole,
+) {
+  const ctx = resolveExpenseNotifyContextBySeasonId(
+    normalized,
+    seasonId,
+    expense,
+    role,
+  );
+  if (ctx) await sendExpenseNtfyNotification(ctx, normalized);
+}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -122,6 +142,7 @@ export async function POST(req: Request) {
         console.error(insErr);
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
+      await notifyExpenseAdded(normalized, seasonId, expense, role);
       return NextResponse.json({ ok: true, revision: 1 });
     }
 
@@ -179,6 +200,7 @@ export async function POST(req: Request) {
       );
     }
 
+    await notifyExpenseAdded(normalized, seasonId, expense, role);
     return NextResponse.json({ ok: true, revision: updatedRows[0].revision });
   } catch (e) {
     console.error(e);
