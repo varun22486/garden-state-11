@@ -4,7 +4,7 @@ import {
 } from "@/lib/auth-cookie";
 import { defaultAppState, normalizeAppState } from "@/lib/storage";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { AppState } from "@/lib/types";
+import type { AppState, Expense } from "@/lib/types";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -21,49 +21,42 @@ function notConfigured() {
   );
 }
 
-export async function GET() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return notConfigured();
-  }
-
-  const cookie = (await cookies()).get(FINANCE_SESSION_COOKIE_NAME)?.value;
-  const role = getFinanceRoleFromCookie(cookie);
-  if (!role) {
-    return unauthorized();
-  }
-
-  try {
-    const { data: row, error } = await supabaseAdmin
-      .from("finance_state")
-      .select("payload,revision")
-      .eq("id", DOC_ID)
-      .maybeSingle();
-
-    if (error) {
-      console.error(error);
-      return NextResponse.json({ error: "Database error" }, { status: 500 });
-    }
-
-    if (!row) {
-      return NextResponse.json({
-        state: defaultAppState(),
-        revision: 0,
-        role,
-      });
-    }
-
-    return NextResponse.json({
-      state: normalizeAppState(row.payload),
-      revision: row.revision,
-      role,
-    });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: "Database error" }, { status: 500 });
-  }
+function isValidExpense(e: unknown): e is Expense {
+  if (!e || typeof e !== "object") return false;
+  const x = e as Expense;
+  return (
+    typeof x.id === "string" &&
+    x.id.length > 0 &&
+    typeof x.date === "string" &&
+    typeof x.amount === "number" &&
+    Number.isFinite(x.amount) &&
+    x.amount > 0 &&
+    typeof x.description === "string" &&
+    x.description.trim().length > 0 &&
+    typeof x.paidByPlayerId === "string" &&
+    typeof x.category === "string"
+  );
 }
 
-export async function PUT(req: Request) {
+function mergeExpenseIntoSeason(
+  state: AppState,
+  seasonId: string,
+  expense: Expense,
+): AppState | null {
+  const season = state.seasons.find((s) => s.id === seasonId);
+  if (!season) return null;
+  if (!season.players.some((p) => p.id === expense.paidByPlayerId)) return null;
+  if (!state.expenseCategories.some((c) => c.id === expense.category)) return null;
+  return {
+    ...state,
+    seasons: state.seasons.map((s) =>
+      s.id === seasonId ? { ...s, expenses: [expense, ...s.expenses] } : s,
+    ),
+  };
+}
+
+/** Admin and viewer: append one expense with revision check (viewer cannot full PUT). */
+export async function POST(req: Request) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return notConfigured();
   }
@@ -73,31 +66,25 @@ export async function PUT(req: Request) {
   if (!role) {
     return unauthorized();
   }
-  if (role !== "admin") {
-    return NextResponse.json(
-      { error: "Only admins can save full changes" },
-      { status: 403 },
-    );
-  }
 
-  let body: { state?: AppState; revision?: number };
+  let body: { seasonId?: string; expense?: unknown; revision?: number };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const clientState = body.state;
+  const seasonId = typeof body.seasonId === "string" ? body.seasonId : "";
+  const expense = body.expense;
   const clientRevision =
     typeof body.revision === "number" && Number.isFinite(body.revision)
       ? body.revision
       : -1;
 
-  if (!clientState || clientState.version !== 1 || !Array.isArray(clientState.seasons)) {
-    return NextResponse.json({ error: "Invalid state" }, { status: 400 });
+  if (!seasonId || !isValidExpense(expense)) {
+    return NextResponse.json({ error: "Invalid expense or season" }, { status: 400 });
   }
 
-  const normalized = normalizeAppState(clientState);
   const updatedAt = new Date().toISOString();
 
   try {
@@ -119,37 +106,22 @@ export async function PUT(req: Request) {
           { status: 409 },
         );
       }
-
+      const base = defaultAppState();
+      const merged = mergeExpenseIntoSeason(base, seasonId, expense);
+      if (!merged) {
+        return NextResponse.json({ error: "Season or data not found" }, { status: 400 });
+      }
+      const normalized = normalizeAppState(merged);
       const { error: insErr } = await supabaseAdmin.from("finance_state").insert({
         id: DOC_ID,
         payload: normalized,
         revision: 1,
         updated_at: updatedAt,
       });
-
       if (insErr) {
-        if (insErr.code === "23505") {
-          const { data: again } = await supabaseAdmin
-            .from("finance_state")
-            .select("payload,revision")
-            .eq("id", DOC_ID)
-            .single();
-          if (!again) {
-            return NextResponse.json({ error: "Database error" }, { status: 500 });
-          }
-          return NextResponse.json(
-            {
-              error: "Conflict",
-              state: normalizeAppState(again.payload),
-              revision: again.revision,
-            },
-            { status: 409 },
-          );
-        }
         console.error(insErr);
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
-
       return NextResponse.json({ ok: true, revision: 1 });
     }
 
@@ -164,6 +136,12 @@ export async function PUT(req: Request) {
       );
     }
 
+    const st = normalizeAppState(existing.payload);
+    const merged = mergeExpenseIntoSeason(st, seasonId, expense);
+    if (!merged) {
+      return NextResponse.json({ error: "Season or data not found" }, { status: 400 });
+    }
+    const normalized = normalizeAppState(merged);
     const nextRev = existing.revision + 1;
 
     const { data: updatedRows, error: upErr } = await supabaseAdmin

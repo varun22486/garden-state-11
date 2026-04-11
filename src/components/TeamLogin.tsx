@@ -28,12 +28,14 @@ export function TeamLogin({
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg">
         <h1 className="text-xl font-semibold">Garden State 11</h1>
         <p className="mt-2 text-sm text-[var(--muted)]">
-          Enter the shared team password to load the live books (same data for
-          everyone).
+          Use the <strong className="text-[var(--foreground)]">admin</strong>{" "}
+          password for full access, or the{" "}
+          <strong className="text-[var(--foreground)]">expense-only</strong>{" "}
+          password to view and add expenses only.
         </p>
         <form onSubmit={submit} className="mt-6 space-y-4">
           <label className="block text-sm">
-            <span className="text-[var(--muted)]">Team password</span>
+            <span className="text-[var(--muted)]">Password</span>
             <input
               type="password"
               autoComplete="current-password"

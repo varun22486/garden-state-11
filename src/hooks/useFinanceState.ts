@@ -2,12 +2,14 @@
 
 import { appendSnapshot } from "@/lib/snapshots";
 import { loadState, normalizeAppState, saveState } from "@/lib/storage";
-import type { AppState } from "@/lib/types";
+import type { AppState, Expense } from "@/lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export const FINANCE_REMOTE =
   typeof process !== "undefined" &&
   process.env.NEXT_PUBLIC_FINANCE_REMOTE === "true";
+
+export type FinanceRole = "admin" | "viewer";
 
 export function useFinanceState() {
   const [state, setState] = useState<AppState | null>(null);
@@ -15,6 +17,7 @@ export function useFinanceState() {
   const [authRequired, setAuthRequired] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState(false);
+  const [financeRole, setFinanceRole] = useState<FinanceRole>("admin");
   const revisionRef = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateRef = useRef<AppState | null>(null);
@@ -44,9 +47,18 @@ export function useFinanceState() {
       setReady(true);
       return;
     }
-    const data = (await res.json()) as { state: unknown; revision: number };
+    const data = (await res.json()) as {
+      state: unknown;
+      revision: number;
+      role?: FinanceRole;
+    };
     setState(normalizeAppState(data.state));
     revisionRef.current = data.revision;
+    if (data.role === "viewer" || data.role === "admin") {
+      setFinanceRole(data.role);
+    } else {
+      setFinanceRole("admin");
+    }
     setAuthRequired(false);
     setReady(true);
   }, []);
@@ -56,6 +68,7 @@ export function useFinanceState() {
       setState(loadState());
       setReady(true);
       setAuthRequired(false);
+      setFinanceRole("admin");
       return;
     }
     void refreshFromServer();
@@ -89,13 +102,54 @@ export function useFinanceState() {
     [],
   );
 
+  /** Viewer (and admin): append one expense with server revision check. */
+  const postExpense = useCallback(
+    async (seasonId: string, expense: Expense): Promise<boolean> => {
+      if (!FINANCE_REMOTE) return false;
+      setRemoteError(null);
+      const res = await fetch("/api/finance/expense", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seasonId,
+          expense,
+          revision: revisionRef.current,
+        }),
+      });
+      if (res.status === 409) {
+        const d = (await res.json()) as {
+          state?: unknown;
+          revision?: number;
+        };
+        if (d.state != null && typeof d.revision === "number") {
+          setState(normalizeAppState(d.state));
+          revisionRef.current = d.revision;
+          setConflictNotice(true);
+        }
+        return false;
+      }
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        setRemoteError(d.error ?? "Could not save expense.");
+        return false;
+      }
+      const d = (await res.json()) as { revision?: number };
+      if (typeof d.revision === "number") revisionRef.current = d.revision;
+      await refreshFromServer();
+      return true;
+    },
+    [refreshFromServer],
+  );
+
   /** Call after import/replace so the server gets the new blob without waiting for debounce. */
   const flushRemoteSave = useCallback(async () => {
     if (!FINANCE_REMOTE || authRequired) return;
+    if (financeRole !== "admin") return;
     const s = stateRef.current;
     if (!s) return;
     await runRemotePut(s, revisionRef.current);
-  }, [authRequired, runRemotePut]);
+  }, [authRequired, financeRole, runRemotePut]);
 
   useEffect(() => {
     if (!FINANCE_REMOTE) {
@@ -104,6 +158,7 @@ export function useFinanceState() {
       return;
     }
     if (!ready || !state || authRequired) return;
+    if (financeRole !== "admin") return;
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -114,13 +169,14 @@ export function useFinanceState() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [ready, state, authRequired, runRemotePut]);
+  }, [ready, state, authRequired, financeRole, runRemotePut]);
 
   const login = useCallback(
     async (password: string) => {
       setRemoteError(null);
       const res = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
@@ -140,6 +196,7 @@ export function useFinanceState() {
     setState(null);
     setAuthRequired(true);
     setReady(true);
+    setFinanceRole("admin");
   }, []);
 
   const update = useCallback((fn: (s: AppState) => AppState) => {
@@ -163,6 +220,8 @@ export function useFinanceState() {
     replaceState,
     ready,
     remoteMode: FINANCE_REMOTE,
+    financeRole: FINANCE_REMOTE ? financeRole : ("admin" as const),
+    isViewer: FINANCE_REMOTE && financeRole === "viewer",
     authRequired,
     remoteError,
     setRemoteError,
@@ -172,5 +231,6 @@ export function useFinanceState() {
     clearConflictNotice: () => setConflictNotice(false),
     refreshFromServer,
     flushRemoteSave,
+    postExpense,
   };
 }

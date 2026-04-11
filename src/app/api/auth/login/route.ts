@@ -1,8 +1,14 @@
-import { FINANCE_SESSION_COOKIE_NAME, expectedSessionToken } from "@/lib/auth-cookie";
+import {
+  FINANCE_SESSION_COOKIE_NAME,
+  expectedAdminSessionToken,
+  expectedViewerSessionToken,
+} from "@/lib/auth-cookie";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
-  if (!process.env.FINANCE_TEAM_PASSWORD || !process.env.FINANCE_SESSION_SECRET) {
+  const adminEnv = process.env.FINANCE_TEAM_PASSWORD?.trim() ?? "";
+  const secret = process.env.FINANCE_SESSION_SECRET?.trim() ?? "";
+  if (!adminEnv || !secret) {
     return NextResponse.json(
       { error: "Server is not configured for team login" },
       { status: 503 },
@@ -16,11 +22,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (body.password !== process.env.FINANCE_TEAM_PASSWORD) {
+  const pw = (body.password ?? "").trim();
+  const viewerEnv = process.env.FINANCE_VIEWER_PASSWORD?.trim() ?? "";
+  let token: string | null = null;
+
+  if (!pw) {
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   }
 
-  const token = expectedSessionToken();
+  if (pw === adminEnv) {
+    token = expectedAdminSessionToken();
+  } else if (viewerEnv && pw === viewerEnv) {
+    token = expectedViewerSessionToken();
+  } else {
+    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+  }
+
   if (!token) {
     return NextResponse.json({ error: "Session misconfigured" }, { status: 503 });
   }

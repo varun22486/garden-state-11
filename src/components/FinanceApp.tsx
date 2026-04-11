@@ -84,15 +84,20 @@ export function FinanceApp() {
     remoteMode,
     authRequired,
     remoteError,
+    setRemoteError,
     login,
     logout,
     conflictNotice,
     clearConflictNotice,
     refreshFromServer,
     flushRemoteSave,
+    postExpense,
+    isViewer,
   } = useFinanceState();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [viewerSeasonId, setViewerSeasonId] = useState<string | null>(null);
+  const [expenseBusy, setExpenseBusy] = useState(false);
 
   const [showNewSeason, setShowNewSeason] = useState(false);
   const [newSeasonLabel, setNewSeasonLabel] = useState("");
@@ -114,7 +119,25 @@ export function FinanceApp() {
   const [editFee, setEditFee] = useState("");
   const [activeTab, setActiveTab] = useState<MainTabId>("dashboard");
 
-  const season = state ? findSeason(state, state.currentSeasonId) : null;
+  const effectiveSeasonId =
+    (isViewer ? viewerSeasonId : null) ?? state?.currentSeasonId ?? null;
+  const season =
+    state && effectiveSeasonId
+      ? findSeason(state, effectiveSeasonId)
+      : null;
+
+  const mainTabs = useMemo(
+    () => (isViewer ? MAIN_TABS.filter((t) => t.id !== "audit") : MAIN_TABS),
+    [isViewer],
+  );
+
+  useEffect(() => {
+    if (!isViewer) setViewerSeasonId(null);
+  }, [isViewer]);
+
+  useEffect(() => {
+    if (isViewer && activeTab === "audit") setActiveTab("dashboard");
+  }, [isViewer, activeTab]);
   const totals = useMemo(
     () => (season ? computeSeasonTotals(season) : null),
     [season],
@@ -237,7 +260,7 @@ export function FinanceApp() {
     setShowNewSeason(false);
   };
 
-  const addExpense = () => {
+  const addExpense = async () => {
     if (!season || season.players.length === 0 || !state) return;
     const amt = Number.parseFloat(expenseAmount);
     if (!Number.isFinite(amt) || amt <= 0 || !expenseDesc.trim()) return;
@@ -257,6 +280,21 @@ export function FinanceApp() {
       paidByPlayerId: expensePaidBy,
       category: expenseCategory,
     };
+
+    if (remoteMode && isViewer) {
+      setExpenseBusy(true);
+      try {
+        const ok = await postExpense(season.id, e);
+        if (ok) {
+          setExpenseAmount("");
+          setExpenseDesc("");
+          setActiveTab("history");
+        }
+      } finally {
+        setExpenseBusy(false);
+      }
+      return;
+    }
 
     update((app) => ({
       ...app,
@@ -682,7 +720,14 @@ export function FinanceApp() {
           <p className="mt-1 max-w-xl text-sm text-[var(--muted)]">
             Pool accounting for fees and expenses. Recording spend lowers the fund;
             whoever paid is shown as owed reimbursement.
-            {remoteMode ? (
+            {remoteMode && isViewer ? (
+              <>
+                {" "}
+                You&apos;re signed in with <strong>expense-only</strong> access:
+                view the dashboard and history, switch seasons, and add expenses.
+                Admin tasks use the other password.
+              </>
+            ) : remoteMode ? (
               <>
                 {" "}
                 This deploy shares one live dataset for the team (sign in with the
@@ -703,13 +748,18 @@ export function FinanceApp() {
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <select
             className="min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm sm:min-h-10 sm:w-auto"
-            value={state.currentSeasonId ?? ""}
-            onChange={(e) =>
-              update((a) => ({
-                ...a,
-                currentSeasonId: e.target.value || null,
-              }))
-            }
+            value={effectiveSeasonId ?? ""}
+            onChange={(e) => {
+              const v = e.target.value || null;
+              if (isViewer) {
+                setViewerSeasonId(v);
+              } else {
+                update((a) => ({
+                  ...a,
+                  currentSeasonId: v,
+                }));
+              }
+            }}
           >
             {state.seasons.length === 0 ? (
               <option value="">No seasons yet</option>
@@ -720,24 +770,37 @@ export function FinanceApp() {
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={openNewSeason}
-            className="min-h-11 w-full rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 sm:min-h-10 sm:w-auto"
-          >
-            New season
-          </button>
+          {!isViewer ? (
+            <button
+              type="button"
+              onClick={openNewSeason}
+              className="min-h-11 w-full rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 sm:min-h-10 sm:w-auto"
+            >
+              New season
+            </button>
+          ) : null}
+          {remoteMode && isViewer ? (
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="min-h-11 w-full rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--muted)] sm:min-h-10 sm:w-auto"
+            >
+              Log out
+            </button>
+          ) : null}
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={(e) => {
-            onImportFile(e.target.files?.[0] ?? null);
-            e.target.value = "";
-          }}
-        />
+        {!isViewer ? (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              onImportFile(e.target.files?.[0] ?? null);
+              e.target.value = "";
+            }}
+          />
+        ) : null}
       </header>
 
       {conflictNotice ? (
@@ -752,6 +815,22 @@ export function FinanceApp() {
           <button
             type="button"
             onClick={clearConflictNotice}
+            className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+
+      {remoteMode && remoteError && !authRequired ? (
+        <div
+          className="flex flex-col gap-2 rounded-xl border border-[var(--danger)]/45 bg-[var(--danger)]/10 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          role="alert"
+        >
+          <p className="text-[var(--foreground)]">{remoteError}</p>
+          <button
+            type="button"
+            onClick={() => setRemoteError(null)}
             className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium"
           >
             Dismiss
@@ -873,15 +952,19 @@ export function FinanceApp() {
       {state.seasons.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)]/50 px-8 py-16 text-center">
           <p className="text-[var(--muted)]">
-            Create your first season to start tracking fees and expenses.
+            {isViewer
+              ? "No season yet. Ask a team admin to create one before you can add expenses."
+              : "Create your first season to start tracking fees and expenses."}
           </p>
-          <button
-            type="button"
-            onClick={openNewSeason}
-            className="mt-4 rounded-lg bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white"
-          >
-            New season
-          </button>
+          {!isViewer ? (
+            <button
+              type="button"
+              onClick={openNewSeason}
+              className="mt-4 rounded-lg bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white"
+            >
+              New season
+            </button>
+          ) : null}
         </div>
       ) : !season ? (
         <p className="text-[var(--muted)]">Select a season above.</p>
@@ -892,7 +975,7 @@ export function FinanceApp() {
             role="tablist"
             aria-label="Main sections"
           >
-            {MAIN_TABS.map((t) => (
+            {mainTabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -1030,7 +1113,8 @@ export function FinanceApp() {
             ) : null}
           </section>
 
-                <section className="space-y-4">
+                {!isViewer ? (
+                  <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Players & fees</h3>
               <button
@@ -1184,6 +1268,7 @@ export function FinanceApp() {
               Season fee is separate (Fee status).
             </p>
           </section>
+                ) : null}
               </>
             ) : null}
 
@@ -1210,7 +1295,9 @@ export function FinanceApp() {
                           <th className="px-3 py-2">Paid by</th>
                           <th className="px-3 py-2 text-right">Amount</th>
                           <th className="px-3 py-2 text-right">Running total</th>
-                          <th className="px-3 py-2 text-right" />
+                          {!isViewer ? (
+                            <th className="px-3 py-2 text-right" />
+                          ) : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -1240,15 +1327,17 @@ export function FinanceApp() {
                               <td className="px-3 py-2 text-right tabular-nums font-medium text-[var(--accent)]">
                                 {formatMoney(runningTotal)}
                               </td>
-                              <td className="px-3 py-2 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => removeExpense(e.id)}
-                                  className="text-xs text-[var(--danger)] hover:underline"
-                                >
-                                  Delete
-                                </button>
-                              </td>
+                              {!isViewer ? (
+                                <td className="px-3 py-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeExpense(e.id)}
+                                    className="text-xs text-[var(--danger)] hover:underline"
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              ) : null}
                             </tr>
                           );
                         })}
@@ -1336,11 +1425,11 @@ export function FinanceApp() {
               </div>
               <button
                 type="button"
-                onClick={addExpense}
-                disabled={season.players.length === 0}
+                onClick={() => void addExpense()}
+                disabled={season.players.length === 0 || expenseBusy}
                 className="min-h-12 w-full rounded-lg bg-[var(--accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-10 sm:w-auto sm:py-2"
               >
-                Record expense
+                {expenseBusy ? "Saving…" : "Record expense"}
               </button>
                 </div>
               </section>

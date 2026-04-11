@@ -1,4 +1,7 @@
-import { FINANCE_SESSION_COOKIE_NAME, isValidFinanceSession } from "@/lib/auth-cookie";
+import {
+  FINANCE_SESSION_COOKIE_NAME,
+  getFinanceRoleFromCookie,
+} from "@/lib/auth-cookie";
 import { normalizeAppState } from "@/lib/storage";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { cookies } from "next/headers";
@@ -6,6 +9,10 @@ import { NextResponse } from "next/server";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function forbidden() {
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
 function notConfigured() {
@@ -23,8 +30,12 @@ export async function GET(_req: Request, ctx: Ctx) {
   }
 
   const cookie = (await cookies()).get(FINANCE_SESSION_COOKIE_NAME)?.value;
-  if (!isValidFinanceSession(cookie)) {
+  const role = getFinanceRoleFromCookie(cookie);
+  if (!role) {
     return unauthorized();
+  }
+  if (role !== "admin") {
+    return forbidden();
   }
 
   const { id } = await ctx.params;
@@ -65,8 +76,12 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   }
 
   const cookie = (await cookies()).get(FINANCE_SESSION_COOKIE_NAME)?.value;
-  if (!isValidFinanceSession(cookie)) {
+  const role = getFinanceRoleFromCookie(cookie);
+  if (!role) {
     return unauthorized();
+  }
+  if (role !== "admin") {
+    return forbidden();
   }
 
   const { id } = await ctx.params;

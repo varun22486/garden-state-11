@@ -1,4 +1,7 @@
-import { FINANCE_SESSION_COOKIE_NAME, isValidFinanceSession } from "@/lib/auth-cookie";
+import {
+  FINANCE_SESSION_COOKIE_NAME,
+  getFinanceRoleFromCookie,
+} from "@/lib/auth-cookie";
 import { normalizeAppState } from "@/lib/storage";
 import type { AppState } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -9,6 +12,10 @@ const MAX_ARCHIVED_ROWS = 400;
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function forbidden() {
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
 function notConfigured() {
@@ -41,8 +48,12 @@ export async function GET() {
   }
 
   const cookie = (await cookies()).get(FINANCE_SESSION_COOKIE_NAME)?.value;
-  if (!isValidFinanceSession(cookie)) {
+  const role = getFinanceRoleFromCookie(cookie);
+  if (!role) {
     return unauthorized();
+  }
+  if (role !== "admin") {
+    return forbidden();
   }
 
   try {
@@ -75,8 +86,12 @@ export async function POST(req: Request) {
   }
 
   const cookie = (await cookies()).get(FINANCE_SESSION_COOKIE_NAME)?.value;
-  if (!isValidFinanceSession(cookie)) {
+  const role = getFinanceRoleFromCookie(cookie);
+  if (!role) {
     return unauthorized();
+  }
+  if (role !== "admin") {
+    return forbidden();
   }
 
   let body: { id?: string; savedAt?: string; state?: AppState };
