@@ -119,6 +119,15 @@ export function FinanceApp() {
     () => (season ? computeSeasonTotals(season) : null),
     [season],
   );
+  const outstandingBalanceRows = useMemo(() => {
+    if (!totals) return [];
+    return totals.playerBalances.filter((b) => {
+      const unpaid = b.feeShortfall > 0.005;
+      const paybackDue =
+        !b.isTreasurer && b.reimbursementOutstanding > 0.005;
+      return unpaid || paybackDue;
+    });
+  }, [totals]);
   const [snapRev, setSnapRev] = useState(0);
   const [serverArchives, setServerArchives] = useState<
     { id: string; savedAt: string }[]
@@ -318,7 +327,8 @@ export function FinanceApp() {
     });
   };
 
-  const setPlayerTreasurer = (playerId: string, on: boolean) => {
+  /** At most one treasurer per season; `null` clears. */
+  const setSeasonTreasurer = (playerId: string | null) => {
     if (!season) return;
     const sid = season.id;
     update((app) => ({
@@ -328,12 +338,10 @@ export function FinanceApp() {
           ? x
           : {
               ...x,
-              players: x.players.map((p) => {
-                if (!on) {
-                  return p.id === playerId ? { ...p, isTreasurer: false } : p;
-                }
-                return { ...p, isTreasurer: p.id === playerId };
-              }),
+              players: x.players.map((p) => ({
+                ...p,
+                isTreasurer: playerId ? p.id === playerId : false,
+              })),
             },
       ),
     }));
@@ -948,69 +956,76 @@ export function FinanceApp() {
             {totals && season.players.length > 0 ? (
               <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
                 <h3 className="text-sm font-semibold text-[var(--foreground)]">
-                  Balances at a glance
+                  Outstanding fees &amp; paybacks
                 </h3>
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Season fee still owed is highlighted in red. Reimbursement is
-                  what the pool still owes someone for expenses they fronted
-                  (treasurer excluded).
+                  Only players with an unpaid season fee or a payback still owed
+                  from the pool. Red = action needed.
                 </p>
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[280px] text-left text-xs sm:text-sm">
-                    <thead className="border-b border-[var(--border)] text-[var(--muted)]">
-                      <tr>
-                        <th className="pb-2 pr-3 font-medium">Player</th>
-                        <th className="pb-2 pr-3 font-medium">Fee</th>
-                        <th className="pb-2 font-medium">Reimburse</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {totals.playerBalances.map((b) => {
-                        const unpaid = b.feeShortfall > 0.005;
-                        const due = !b.isTreasurer && b.reimbursementOutstanding > 0.005;
-                        return (
-                          <tr
-                            key={b.playerId}
-                            className="border-b border-[var(--border)]/40 last:border-0"
-                          >
-                            <td className="py-2 pr-3 font-medium">
-                              {b.name}
-                              {b.isTreasurer ? (
-                                <span className="ml-1.5 align-middle rounded bg-[var(--muted)]/20 px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--muted)]">
-                                  Treasurer
-                                </span>
-                              ) : null}
-                            </td>
-                            <td
-                              className={`py-2 pr-3 tabular-nums ${
-                                unpaid
-                                  ? "font-semibold text-[var(--danger)]"
-                                  : "text-[var(--muted)]"
-                              }`}
+                {outstandingBalanceRows.length === 0 ? (
+                  <p className="mt-3 text-sm text-[var(--muted)]">
+                    No one owes a fee and no paybacks are pending — all square.
+                  </p>
+                ) : (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full min-w-[280px] text-left text-xs sm:text-sm">
+                      <thead className="border-b border-[var(--border)] text-[var(--muted)]">
+                        <tr>
+                          <th className="pb-2 pr-3 font-medium">Player</th>
+                          <th className="pb-2 pr-3 font-medium">Fee</th>
+                          <th className="pb-2 font-medium">Payback</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {outstandingBalanceRows.map((b) => {
+                          const unpaid = b.feeShortfall > 0.005;
+                          const due =
+                            !b.isTreasurer &&
+                            b.reimbursementOutstanding > 0.005;
+                          return (
+                            <tr
+                              key={b.playerId}
+                              className="border-b border-[var(--border)]/40 last:border-0"
                             >
-                              {unpaid
-                                ? `${formatMoney(b.feeShortfall)} due`
-                                : "Paid"}
-                            </td>
-                            <td
-                              className={`py-2 tabular-nums ${
-                                due
-                                  ? "font-semibold text-[var(--danger)]"
-                                  : "text-[var(--muted)]"
-                              }`}
-                            >
-                              {b.isTreasurer
-                                ? "—"
-                                : due
-                                  ? formatMoney(b.reimbursementOutstanding)
-                                  : "—"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              <td className="py-2 pr-3 font-medium">
+                                {b.name}
+                                {b.isTreasurer ? (
+                                  <span className="ml-1.5 align-middle rounded bg-[var(--muted)]/20 px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--muted)]">
+                                    Treasurer
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td
+                                className={`py-2 pr-3 tabular-nums ${
+                                  unpaid
+                                    ? "font-semibold text-[var(--danger)]"
+                                    : "text-[var(--muted)]"
+                                }`}
+                              >
+                                {unpaid
+                                  ? `${formatMoney(b.feeShortfall)} due`
+                                  : "Paid"}
+                              </td>
+                              <td
+                                className={`py-2 tabular-nums ${
+                                  due
+                                    ? "font-semibold text-[var(--danger)]"
+                                    : "text-[var(--muted)]"
+                                }`}
+                              >
+                                {b.isTreasurer
+                                  ? "—"
+                                  : due
+                                    ? formatMoney(b.reimbursementOutstanding)
+                                    : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             ) : null}
           </section>
@@ -1027,11 +1042,10 @@ export function FinanceApp() {
               </button>
             </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-              <table className="w-full min-w-[860px] text-left text-xs sm:text-sm">
+              <table className="w-full min-w-[640px] text-left text-xs sm:text-sm">
                 <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                   <tr>
                     <th className="px-3 py-2">Player</th>
-                    <th className="px-3 py-2">Treasurer</th>
                     <th className="px-3 py-2">Fee status</th>
                     <th className="px-3 py-2">Paid ($)</th>
                     <th className="px-3 py-2">Reimbursement</th>
@@ -1063,19 +1077,6 @@ export function FinanceApp() {
                               updatePlayer(b.playerId, { name: e.target.value })
                             }
                           />
-                        </td>
-                        <td className="px-3 py-2">
-                          <label className="flex cursor-pointer items-center gap-2 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={b.isTreasurer}
-                              onChange={(e) =>
-                                setPlayerTreasurer(b.playerId, e.target.checked)
-                              }
-                              className="h-4 w-4 rounded border-[var(--border)]"
-                            />
-                            <span className="text-[var(--muted)]">Admin</span>
-                          </label>
                         </td>
                         <td className="px-3 py-2">
                           {unpaid ? (
@@ -1177,9 +1178,9 @@ export function FinanceApp() {
               still owe someone for what they fronted — use{" "}
               <strong className="text-[var(--foreground)]">Settle all</strong> or{" "}
               <strong className="text-[var(--foreground)]">Record partial</strong>{" "}
-              when paid from the pool. Mark one player as{" "}
-              <strong className="text-[var(--foreground)]">Treasurer</strong> if
-              they collect fees and should not appear as owed reimbursement.
+              when paid from the pool. Choose the treasurer under{" "}
+              <strong className="text-[var(--foreground)]">Audit → Season settings</strong>{" "}
+              if they collect fees and should not be owed payback from the pool.
               Season fee is separate (Fee status).
             </p>
           </section>
@@ -1541,8 +1542,38 @@ export function FinanceApp() {
                       </button>
                     </div>
                   </div>
+                  <div className="mt-4 border-t border-[var(--border)] pt-4">
+                    <label className="block text-sm">
+                      <span className="text-[var(--muted)]">
+                        Treasurer / admin (collects fees; no payback tracked from
+                        pool)
+                      </span>
+                      <select
+                        className="mt-1 min-h-11 w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:min-h-10"
+                        value={
+                          season.players.find((p) => p.isTreasurer)?.id ?? ""
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSeasonTreasurer(v === "" ? null : v);
+                        }}
+                      >
+                        <option value="">— None —</option>
+                        {season.players.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      One person per season. They can still owe a season fee like
+                      anyone else; only expense payback from the shared pool is
+                      skipped for them.
+                    </p>
+                  </div>
                   {season.carryOverFromSeasonId ? (
-                    <p className="text-xs text-[var(--muted)]">
+                    <p className="mt-4 text-xs text-[var(--muted)]">
                       Linked prior:{" "}
                       {findSeason(state, season.carryOverFromSeasonId)?.label ??
                         "(missing)"}{" "}
