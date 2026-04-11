@@ -8,6 +8,7 @@ import {
   parsePlayerNamesBlob,
   sumExpensesPaidByPlayer,
   suggestedCarryOver,
+  type PlayerBalance,
 } from "@/lib/finance";
 import { useFinanceState } from "@/hooks/useFinanceState";
 import {
@@ -54,22 +55,30 @@ function Card({
 }) {
   const border =
     variant === "danger"
-      ? "border-[var(--danger)]/40"
+      ? "border-[var(--danger)]/50 shadow-[0_0_0_1px_rgba(232,93,93,0.15)]"
       : variant === "warn"
-        ? "border-[var(--warn)]/40"
+        ? "border-[var(--warn)]/45 shadow-[0_0_0_1px_rgba(232,184,74,0.12)]"
         : variant === "ok"
-          ? "border-[var(--accent)]/40"
+          ? "border-[var(--accent)]/40 shadow-[0_0_20px_-8px_var(--glow-accent)]"
           : "border-[var(--border)]";
+  const bg =
+    variant === "danger"
+      ? "bg-[var(--danger-softer)]"
+      : variant === "ok"
+        ? "bg-[var(--card)]"
+        : "bg-[var(--card)]";
   return (
     <div
-      className={`rounded-xl border ${border} bg-[var(--card)] p-3 shadow-sm sm:p-4`}
+      className={`rounded-2xl border ${border} ${bg} p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.55)] transition-shadow sm:p-5`}
     >
-      <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
         {title}
       </p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-[var(--foreground)] sm:text-[1.65rem]">
+        {value}
+      </p>
       {hint ? (
-        <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>
+        <p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">{hint}</p>
       ) : null}
     </div>
   );
@@ -150,6 +159,17 @@ export function FinanceApp() {
         !b.isTreasurer && b.reimbursementOutstanding > 0.005;
       return unpaid || paybackDue;
     });
+  }, [totals]);
+
+  const feeCollectionSummary = useMemo(() => {
+    if (!totals) {
+      return { unpaidPlayers: [] as PlayerBalance[], totalShortfall: 0 };
+    }
+    const unpaidPlayers = totals.playerBalances.filter(
+      (b) => b.feeShortfall > 0.005,
+    );
+    const totalShortfall = unpaidPlayers.reduce((s, b) => s + b.feeShortfall, 0);
+    return { unpaidPlayers, totalShortfall };
   }, [totals]);
   const [snapRev, setSnapRev] = useState(0);
   const [serverArchives, setServerArchives] = useState<
@@ -981,10 +1001,10 @@ export function FinanceApp() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === t.id}
-                className={`shrink-0 whitespace-nowrap rounded-t-lg border-b-2 px-3 py-3 text-sm font-medium sm:px-4 sm:py-2.5 ${
+                className={`shrink-0 whitespace-nowrap rounded-t-xl border-b-2 px-3 py-3 text-sm font-semibold transition-colors sm:px-4 sm:py-2.5 ${
                   activeTab === t.id
-                    ? "border-[var(--accent)] bg-[var(--card)]/70 text-[var(--foreground)]"
-                    : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+                    ? "border-[var(--accent)] bg-[var(--card)] text-[var(--foreground)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
+                    : "border-transparent text-[var(--muted)] hover:bg-[var(--card)]/40 hover:text-[var(--foreground)]"
                 }`}
                 onClick={() => setActiveTab(t.id)}
               >
@@ -997,8 +1017,81 @@ export function FinanceApp() {
             {activeTab === "dashboard" ? (
               <>
                 <section className="space-y-4">
-                  <h2 className="text-lg font-semibold">Overview — {season.label}</h2>
-            {totals ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+                    <h2 className="text-lg font-semibold tracking-tight">
+                      Overview — {season.label}
+                    </h2>
+                    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--muted)] sm:text-xs">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full bg-[var(--danger)]"
+                          aria-hidden
+                        />
+                        Unpaid fee
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full bg-[var(--warn)]"
+                          aria-hidden
+                        />
+                        Payback owed
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]"
+                          aria-hidden
+                        />
+                        Settled
+                      </span>
+                    </p>
+                  </div>
+
+                  {totals &&
+                  feeCollectionSummary.unpaidPlayers.length > 0 &&
+                  season.players.length > 0 ? (
+                    <div
+                      className="rounded-2xl border-2 border-[var(--danger)]/55 bg-[var(--danger-soft)] px-4 py-4 shadow-[0_0_40px_-12px_rgba(232,93,93,0.45)] sm:px-5 sm:py-5"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
+                            Season fee not paid
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-[var(--foreground)] sm:text-lg">
+                            {feeCollectionSummary.unpaidPlayers.length}{" "}
+                            {feeCollectionSummary.unpaidPlayers.length === 1
+                              ? "player still owes"
+                              : "players still owe"}{" "}
+                            <span className="tabular-nums text-[var(--danger)]">
+                              {formatMoney(feeCollectionSummary.totalShortfall)}
+                            </span>{" "}
+                            in fees
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--muted)]">
+                            Highlighted in red below — collect before treating the
+                            season as fully funded.
+                          </p>
+                        </div>
+                      </div>
+                      <ul className="mt-4 flex flex-wrap gap-2">
+                        {feeCollectionSummary.unpaidPlayers.map((b) => (
+                          <li
+                            key={b.playerId}
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--danger)]/40 bg-[var(--background)]/80 px-3 py-1.5 text-sm font-medium text-[var(--foreground)]"
+                          >
+                            <span>{b.name}</span>
+                            <span className="tabular-nums text-[var(--danger)]">
+                              {formatMoney(b.feeShortfall)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {totals ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <Card
                   title="Carry-over"
@@ -1037,13 +1130,13 @@ export function FinanceApp() {
             ) : null}
 
             {totals && season.players.length > 0 ? (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.5)] sm:p-5">
                 <h3 className="text-sm font-semibold text-[var(--foreground)]">
                   Outstanding fees &amp; paybacks
                 </h3>
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Only players with an unpaid season fee or a payback still owed
-                  from the pool. Red = action needed.
+                  Red rows = unpaid season fee. Amber = payback from the pool still
+                  owed (fee may already be paid).
                 </p>
                 {outstandingBalanceRows.length === 0 ? (
                   <p className="mt-3 text-sm text-[var(--muted)]">
@@ -1051,12 +1144,12 @@ export function FinanceApp() {
                   </p>
                 ) : (
                   <div className="mt-3 overflow-x-auto">
-                    <table className="w-full min-w-[280px] text-left text-xs sm:text-sm">
-                      <thead className="border-b border-[var(--border)] text-[var(--muted)]">
+                    <table className="w-full min-w-[280px] border-separate border-spacing-y-2 text-left text-xs sm:text-sm">
+                      <thead className="text-[var(--muted)]">
                         <tr>
-                          <th className="pb-2 pr-3 font-medium">Player</th>
-                          <th className="pb-2 pr-3 font-medium">Fee</th>
-                          <th className="pb-2 font-medium">Payback</th>
+                          <th className="pb-0 pr-3 pl-1 font-medium">Player</th>
+                          <th className="pb-0 pr-3 font-medium">Fee</th>
+                          <th className="pb-0 pl-1 font-medium">Payback</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1065,12 +1158,17 @@ export function FinanceApp() {
                           const due =
                             !b.isTreasurer &&
                             b.reimbursementOutstanding > 0.005;
+                          const rowTone = unpaid
+                            ? "border-l-4 border-l-[var(--danger)] bg-[var(--danger-soft)] ring-1 ring-inset ring-[var(--danger)]/25"
+                            : due
+                              ? "border-l-4 border-l-[var(--warn)] bg-[var(--warn-soft)] ring-1 ring-inset ring-[var(--warn)]/20"
+                              : "border-[var(--border)]/50 bg-[var(--background)]/30";
                           return (
                             <tr
                               key={b.playerId}
-                              className="border-b border-[var(--border)]/40 last:border-0"
+                              className={`rounded-xl ${rowTone}`}
                             >
-                              <td className="py-2 pr-3 font-medium">
+                              <td className="rounded-l-xl py-3 pr-3 pl-3 font-medium">
                                 {b.name}
                                 {b.isTreasurer ? (
                                   <span className="ml-1.5 align-middle rounded bg-[var(--muted)]/20 px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--muted)]">
@@ -1079,7 +1177,7 @@ export function FinanceApp() {
                                 ) : null}
                               </td>
                               <td
-                                className={`py-2 pr-3 tabular-nums ${
+                                className={`py-3 pr-3 tabular-nums ${
                                   unpaid
                                     ? "font-semibold text-[var(--danger)]"
                                     : "text-[var(--muted)]"
@@ -1090,9 +1188,9 @@ export function FinanceApp() {
                                   : "Paid"}
                               </td>
                               <td
-                                className={`py-2 tabular-nums ${
+                                className={`rounded-r-xl py-3 pl-1 pr-3 tabular-nums ${
                                   due
-                                    ? "font-semibold text-[var(--danger)]"
+                                    ? "font-semibold text-[var(--warn)]"
                                     : "text-[var(--muted)]"
                                 }`}
                               >
@@ -1113,17 +1211,18 @@ export function FinanceApp() {
             ) : null}
           </section>
 
-                {!isViewer ? (
-                  <section className="space-y-4">
+                <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Players & fees</h3>
-              <button
-                type="button"
-                onClick={addPlayer}
-                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm"
-              >
-                Add player
-              </button>
+              {!isViewer ? (
+                <button
+                  type="button"
+                  onClick={addPlayer}
+                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm"
+                >
+                  Add player
+                </button>
+              ) : null}
             </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
               <table className="w-full min-w-[640px] text-left text-xs sm:text-sm">
@@ -1133,7 +1232,7 @@ export function FinanceApp() {
                     <th className="px-3 py-2">Fee status</th>
                     <th className="px-3 py-2">Paid ($)</th>
                     <th className="px-3 py-2">Reimbursement</th>
-                    <th className="px-3 py-2" />
+                    {!isViewer ? <th className="px-3 py-2" /> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -1141,58 +1240,82 @@ export function FinanceApp() {
                     const unpaid = b.feeShortfall > 0.005;
                     const hasOop = b.outOfPocket > 0.005;
                     const due = !b.isTreasurer && b.reimbursementOutstanding > 0.005;
+                    const name =
+                      season.players.find((p) => p.id === b.playerId)?.name ?? "";
                     return (
                       <tr
                         key={b.playerId}
                         className={
                           unpaid
-                            ? "bg-[var(--danger)]/10"
-                            : "border-b border-[var(--border)]/60"
+                            ? "border-b border-[var(--border)]/40 bg-[var(--danger-soft)] ring-1 ring-inset ring-[var(--danger)]/20 [box-shadow:inset_4px_0_0_0_var(--danger)]"
+                            : due
+                              ? "border-b border-[var(--border)]/40 bg-[var(--warn-soft)] ring-1 ring-inset ring-[var(--warn)]/15 [box-shadow:inset_4px_0_0_0_var(--warn)]"
+                              : "border-b border-[var(--border)]/60"
                         }
                       >
                         <td className="px-3 py-2">
-                          <input
-                            className="w-full max-w-[160px] rounded border border-transparent bg-transparent px-1 py-0.5 hover:border-[var(--border)]"
-                            value={
-                              season.players.find((p) => p.id === b.playerId)
-                                ?.name ?? ""
-                            }
-                            onChange={(e) =>
-                              updatePlayer(b.playerId, { name: e.target.value })
-                            }
-                          />
+                          {isViewer ? (
+                            <span className="font-medium">{name}</span>
+                          ) : (
+                            <input
+                              className="w-full max-w-[160px] rounded border border-transparent bg-transparent px-1 py-0.5 hover:border-[var(--border)]"
+                              value={name}
+                              onChange={(e) =>
+                                updatePlayer(b.playerId, {
+                                  name: e.target.value,
+                                })
+                              }
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           {unpaid ? (
-                            <span className="inline-flex items-center rounded-full bg-[var(--danger)]/20 px-2 py-0.5 text-xs font-medium text-[var(--danger)]">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--danger)]/35 bg-[var(--background)]/60 px-2.5 py-1 text-xs font-semibold text-[var(--danger)]">
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--danger)]"
+                                aria-hidden
+                              />
                               Owes {formatMoney(b.feeShortfall)}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-full bg-[var(--accent)]/20 px-2 py-0.5 text-xs font-medium text-[var(--accent)]">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/12 px-2.5 py-1 text-xs font-medium text-[var(--accent)]">
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]"
+                                aria-hidden
+                              />
                               Fee paid
                             </span>
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            className="w-24 rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1"
-                            value={b.feePaid}
-                            onChange={(e) =>
-                              updatePlayer(b.playerId, {
-                                feePaid: Number.parseFloat(e.target.value) || 0,
-                              })
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() => markFeePaid(b.playerId)}
-                            className="ml-2 text-xs text-[var(--accent)] hover:underline"
-                          >
-                            Mark full
-                          </button>
+                          {isViewer ? (
+                            <span className="tabular-nums">
+                              {formatMoney(b.feePaid)}
+                            </span>
+                          ) : (
+                            <>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                className="w-24 rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1"
+                                value={b.feePaid}
+                                onChange={(e) =>
+                                  updatePlayer(b.playerId, {
+                                    feePaid:
+                                      Number.parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                              />
+                              <button
+                                type="button"
+                                onClick={() => markFeePaid(b.playerId)}
+                                className="ml-2 text-xs text-[var(--accent)] hover:underline"
+                              >
+                                Mark full
+                              </button>
+                            </>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           {b.isTreasurer ? (
@@ -1205,7 +1328,7 @@ export function FinanceApp() {
                                 Fronted {formatMoney(b.outOfPocket)} · Settled{" "}
                                 {formatMoney(b.reimbursementSettled)}
                                 {due ? (
-                                  <span className="font-medium text-[var(--danger)]">
+                                  <span className="font-medium text-[var(--warn)]">
                                     {" "}
                                     · Still due{" "}
                                     {formatMoney(b.reimbursementOutstanding)}
@@ -1217,7 +1340,7 @@ export function FinanceApp() {
                                   </span>
                                 )}
                               </p>
-                              {due ? (
+                              {due && !isViewer ? (
                                 <div className="flex flex-wrap gap-1.5">
                                   <button
                                     type="button"
@@ -1242,15 +1365,17 @@ export function FinanceApp() {
                             <span className="text-[var(--muted)]">—</span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => removePlayer(b.playerId)}
-                            className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
-                          >
-                            Remove
-                          </button>
-                        </td>
+                        {!isViewer ? (
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => removePlayer(b.playerId)}
+                              className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -1258,17 +1383,26 @@ export function FinanceApp() {
               </table>
             </div>
             <p className="text-xs text-[var(--muted)]">
-              Expenses hit the pool (see Overview). Reimbursement tracks what you
-              still owe someone for what they fronted — use{" "}
-              <strong className="text-[var(--foreground)]">Settle all</strong> or{" "}
-              <strong className="text-[var(--foreground)]">Record partial</strong>{" "}
-              when paid from the pool. Choose the treasurer under{" "}
-              <strong className="text-[var(--foreground)]">Audit → Season settings</strong>{" "}
-              if they collect fees and should not be owed payback from the pool.
-              Season fee is separate (Fee status).
+              {isViewer ? (
+                <>
+                  View only — admins update fees, settlements, and roster in
+                  Audit. Expenses hit the pool (see Overview); reimbursement
+                  shows what the team still owes someone who fronted costs.
+                </>
+              ) : (
+                <>
+                  Expenses hit the pool (see Overview). Reimbursement tracks what you
+                  still owe someone for what they fronted — use{" "}
+                  <strong className="text-[var(--foreground)]">Settle all</strong> or{" "}
+                  <strong className="text-[var(--foreground)]">Record partial</strong>{" "}
+                  when paid from the pool. Choose the treasurer under{" "}
+                  <strong className="text-[var(--foreground)]">Audit → Season settings</strong>{" "}
+                  if they collect fees and should not be owed payback from the pool.
+                  Season fee is separate (Fee status).
+                </>
+              )}
             </p>
           </section>
-                ) : null}
               </>
             ) : null}
 

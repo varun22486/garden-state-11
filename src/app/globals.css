@@ -3,15 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --background: #0c0f14;
+  --background: #0a0d12;
   --foreground: #e8eaed;
-  --card: #151a22;
+  --card: #12171f;
   --border: #2a3344;
   --accent: #3d9a6a;
   --accent-muted: #2d6b4e;
   --warn: #e8b84a;
   --danger: #e85d5d;
   --muted: #8b95a8;
+  --danger-soft: rgba(232, 93, 93, 0.16);
+  --danger-softer: rgba(232, 93, 93, 0.08);
+  --warn-soft: rgba(232, 184, 74, 0.14);
+  --glow-accent: rgba(61, 154, 106, 0.12);
 }
 
 body {
