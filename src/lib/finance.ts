@@ -8,6 +8,11 @@ export type PlayerBalance = {
   feeShortfall: number;
   /** Team expenses this player paid out of pocket — reimburse from the main pool when ready. */
   outOfPocket: number;
+  /** Portion of outOfPocket marked as reimbursed. */
+  reimbursementSettled: number;
+  /** Remaining reimbursement due (0 if treasurer). */
+  reimbursementOutstanding: number;
+  isTreasurer: boolean;
 };
 
 export type SeasonTotals = {
@@ -19,7 +24,10 @@ export type SeasonTotals = {
   playerBalances: PlayerBalance[];
 };
 
-function sumExpensesPaidByPlayer(expenses: Expense[], playerId: string): number {
+export function sumExpensesPaidByPlayer(
+  expenses: Expense[],
+  playerId: string,
+): number {
   return expenses
     .filter((e) => e.paidByPlayerId === playerId)
     .reduce((s, e) => s + e.amount, 0);
@@ -40,6 +48,16 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
     const outOfPocket = sumExpensesPaidByPlayer(season.expenses, p.id);
     const feeRequired = season.initialFeePerPlayer;
     const feeShortfall = Math.max(0, feeRequired - p.feePaid);
+    const settled =
+      typeof p.reimbursementSettled === "number" &&
+      Number.isFinite(p.reimbursementSettled)
+        ? Math.max(0, p.reimbursementSettled)
+        : 0;
+    const cappedSettled = Math.min(outOfPocket, settled);
+    const isTreasurer = p.isTreasurer === true;
+    const reimbursementOutstanding = isTreasurer
+      ? 0
+      : Math.max(0, outOfPocket - cappedSettled);
 
     return {
       playerId: p.id,
@@ -48,6 +66,9 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
       feeRequired,
       feeShortfall,
       outOfPocket,
+      reimbursementSettled: cappedSettled,
+      reimbursementOutstanding,
+      isTreasurer,
     };
   });
 
@@ -97,5 +118,7 @@ export function makePlayer(name: string): Player {
     feePaid: 0,
     splitsExpenses: true,
     notes: undefined,
+    isTreasurer: false,
+    reimbursementSettled: 0,
   };
 }

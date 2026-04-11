@@ -1,11 +1,31 @@
-import type { AppState, ExpenseCategoryDef, Season } from "./types";
+import type { AppState, ExpenseCategoryDef, Player, Season } from "./types";
 import { DEFAULT_EXPENSE_CATEGORIES } from "./types";
+
+function normalizePlayer(p: Player): Player {
+  const settled =
+    typeof p.reimbursementSettled === "number" &&
+    Number.isFinite(p.reimbursementSettled)
+      ? Math.max(0, p.reimbursementSettled)
+      : 0;
+  return {
+    ...p,
+    reimbursementSettled: settled,
+    isTreasurer: p.isTreasurer === true,
+  };
+}
 
 const STORAGE_KEY = "gs11-finance-v1";
 
 export function normalizeAppState(raw: unknown): AppState {
   const r = raw as Partial<AppState>;
-  const seasons = Array.isArray(r.seasons) ? (r.seasons as Season[]) : [];
+  const seasons = Array.isArray(r.seasons)
+    ? (r.seasons as Season[]).map((s) => ({
+        ...s,
+        players: Array.isArray(s.players)
+          ? s.players.map((p) => normalizePlayer(p as Player))
+          : [],
+      }))
+    : [];
   const currentSeasonId =
     typeof r.currentSeasonId === "string" || r.currentSeasonId === null
       ? r.currentSeasonId

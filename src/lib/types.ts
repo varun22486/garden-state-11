@@ -11,6 +11,13 @@ export type Player = {
   /** Legacy field; all players share expenses equally in calculations. */
   splitsExpenses: boolean;
   notes?: string;
+  /**
+   * Treasurer / fee collector: team does not track reimbursement owed to them
+   * (they front expenses but are not paid back through the pool in the app).
+   */
+  isTreasurer?: boolean;
+  /** Out-of-pocket expenses already reimbursed from the pool (see Overview cash). */
+  reimbursementSettled?: number;
 };
 
 export type Expense = {

@@ -6,6 +6,7 @@ import {
   makePlayer,
   newId,
   parsePlayerNamesBlob,
+  sumExpensesPaidByPlayer,
   suggestedCarryOver,
 } from "@/lib/finance";
 import { useFinanceState } from "@/hooks/useFinanceState";
@@ -286,19 +287,73 @@ export function FinanceApp() {
 
   const updatePlayer = (playerId: string, patch: Partial<Player>) => {
     if (!season) return;
+    const sid = season.id;
+    update((app) => {
+      const s = app.seasons.find((x) => x.id === sid);
+      if (!s) return app;
+      let patch2: Partial<Player> = { ...patch };
+      if (patch.reimbursementSettled !== undefined) {
+        const oop = sumExpensesPaidByPlayer(s.expenses, playerId);
+        patch2.reimbursementSettled = Math.max(
+          0,
+          Math.min(oop, patch.reimbursementSettled),
+        );
+      }
+      return {
+        ...app,
+        seasons: app.seasons.map((x) =>
+          x.id === sid
+            ? {
+                ...x,
+                players: x.players.map((p) =>
+                  p.id === playerId ? { ...p, ...patch2 } : p,
+                ),
+              }
+            : x,
+        ),
+      };
+    });
+  };
+
+  const setPlayerTreasurer = (playerId: string, on: boolean) => {
+    if (!season) return;
+    const sid = season.id;
     update((app) => ({
       ...app,
       seasons: app.seasons.map((x) =>
-        x.id === season.id
-          ? {
+        x.id !== sid
+          ? x
+          : {
               ...x,
-              players: x.players.map((p) =>
-                p.id === playerId ? { ...p, ...patch } : p,
-              ),
-            }
-          : x,
+              players: x.players.map((p) => {
+                if (!on) {
+                  return p.id === playerId ? { ...p, isTreasurer: false } : p;
+                }
+                return { ...p, isTreasurer: p.id === playerId };
+              }),
+            },
       ),
     }));
+  };
+
+  const settleReimburseFull = (playerId: string) => {
+    const b = totals?.playerBalances.find((x) => x.playerId === playerId);
+    if (!b || b.isTreasurer || b.reimbursementOutstanding < 0.005) return;
+    updatePlayer(playerId, { reimbursementSettled: b.outOfPocket });
+  };
+
+  const settleReimbursePartial = (playerId: string) => {
+    const raw = window.prompt("Amount reimbursed from the pool ($):", "");
+    if (raw == null || !String(raw).trim()) return;
+    const amt = Number.parseFloat(String(raw));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      alert("Enter a positive number.");
+      return;
+    }
+    const b = totals?.playerBalances.find((x) => x.playerId === playerId);
+    if (!b || b.isTreasurer) return;
+    const next = Math.min(b.outOfPocket, b.reimbursementSettled + amt);
+    updatePlayer(playerId, { reimbursementSettled: next });
   };
 
   const removePlayer = (playerId: string) => {
@@ -886,6 +941,75 @@ export function FinanceApp() {
                 expenses or adjust carry-over / fees.
               </p>
             ) : null}
+
+            {totals && season.players.length > 0 ? (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
+                <h3 className="text-sm font-semibold text-[var(--foreground)]">
+                  Balances at a glance
+                </h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Season fee still owed is highlighted in red. Reimbursement is
+                  what the pool still owes someone for expenses they fronted
+                  (treasurer excluded).
+                </p>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[280px] text-left text-xs sm:text-sm">
+                    <thead className="border-b border-[var(--border)] text-[var(--muted)]">
+                      <tr>
+                        <th className="pb-2 pr-3 font-medium">Player</th>
+                        <th className="pb-2 pr-3 font-medium">Fee</th>
+                        <th className="pb-2 font-medium">Reimburse</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totals.playerBalances.map((b) => {
+                        const unpaid = b.feeShortfall > 0.005;
+                        const due = !b.isTreasurer && b.reimbursementOutstanding > 0.005;
+                        return (
+                          <tr
+                            key={b.playerId}
+                            className="border-b border-[var(--border)]/40 last:border-0"
+                          >
+                            <td className="py-2 pr-3 font-medium">
+                              {b.name}
+                              {b.isTreasurer ? (
+                                <span className="ml-1.5 align-middle rounded bg-[var(--muted)]/20 px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--muted)]">
+                                  Treasurer
+                                </span>
+                              ) : null}
+                            </td>
+                            <td
+                              className={`py-2 pr-3 tabular-nums ${
+                                unpaid
+                                  ? "font-semibold text-[var(--danger)]"
+                                  : "text-[var(--muted)]"
+                              }`}
+                            >
+                              {unpaid
+                                ? `${formatMoney(b.feeShortfall)} due`
+                                : "Paid"}
+                            </td>
+                            <td
+                              className={`py-2 tabular-nums ${
+                                due
+                                  ? "font-semibold text-[var(--danger)]"
+                                  : "text-[var(--muted)]"
+                              }`}
+                            >
+                              {b.isTreasurer
+                                ? "—"
+                                : due
+                                  ? formatMoney(b.reimbursementOutstanding)
+                                  : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </section>
 
                 <section className="space-y-4">
@@ -900,20 +1024,22 @@ export function FinanceApp() {
               </button>
             </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-              <table className="w-full min-w-[640px] text-left text-xs sm:text-sm">
+              <table className="w-full min-w-[860px] text-left text-xs sm:text-sm">
                 <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                   <tr>
                     <th className="px-3 py-2">Player</th>
+                    <th className="px-3 py-2">Treasurer</th>
                     <th className="px-3 py-2">Fee status</th>
                     <th className="px-3 py-2">Paid ($)</th>
-                    <th className="px-3 py-2">Owed from pool</th>
+                    <th className="px-3 py-2">Reimbursement</th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {totals?.playerBalances.map((b) => {
                     const unpaid = b.feeShortfall > 0.005;
-                    const owed = b.outOfPocket > 0.005;
+                    const hasOop = b.outOfPocket > 0.005;
+                    const due = !b.isTreasurer && b.reimbursementOutstanding > 0.005;
                     return (
                       <tr
                         key={b.playerId}
@@ -934,6 +1060,19 @@ export function FinanceApp() {
                               updatePlayer(b.playerId, { name: e.target.value })
                             }
                           />
+                        </td>
+                        <td className="px-3 py-2">
+                          <label className="flex cursor-pointer items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={b.isTreasurer}
+                              onChange={(e) =>
+                                setPlayerTreasurer(b.playerId, e.target.checked)
+                              }
+                              className="h-4 w-4 rounded border-[var(--border)]"
+                            />
+                            <span className="text-[var(--muted)]">Admin</span>
+                          </label>
                         </td>
                         <td className="px-3 py-2">
                           {unpaid ? (
@@ -968,14 +1107,48 @@ export function FinanceApp() {
                           </button>
                         </td>
                         <td className="px-3 py-2">
-                          {owed ? (
-                            <div className="space-y-1">
-                              <span className="font-medium text-[var(--accent)]">
-                                {formatMoney(b.outOfPocket)} to reimburse
-                              </span>
+                          {b.isTreasurer ? (
+                            <span className="text-sm text-[var(--muted)]">
+                              Not tracked — treasurer / fee collector
+                            </span>
+                          ) : hasOop ? (
+                            <div className="max-w-[220px] space-y-2">
                               <p className="text-xs text-[var(--muted)]">
-                                Paid for the team — settle from the main pool
+                                Fronted {formatMoney(b.outOfPocket)} · Settled{" "}
+                                {formatMoney(b.reimbursementSettled)}
+                                {due ? (
+                                  <span className="font-medium text-[var(--danger)]">
+                                    {" "}
+                                    · Still due{" "}
+                                    {formatMoney(b.reimbursementOutstanding)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[var(--accent)]">
+                                    {" "}
+                                    · Fully settled
+                                  </span>
+                                )}
                               </p>
+                              {due ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => settleReimburseFull(b.playerId)}
+                                    className="rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs font-medium"
+                                  >
+                                    Settle all
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      settleReimbursePartial(b.playerId)
+                                    }
+                                    className="rounded border border-[var(--border)] px-2 py-1 text-xs"
+                                  >
+                                    Record partial…
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
                           ) : (
                             <span className="text-[var(--muted)]">—</span>
@@ -997,9 +1170,14 @@ export function FinanceApp() {
               </table>
             </div>
             <p className="text-xs text-[var(--muted)]">
-              Expenses hit the pool (see Overview). &quot;Owed from pool&quot; is
-              only what that person fronted so you can reimburse them — not an
-              extra charge to others. Season fee is separate (Fee status).
+              Expenses hit the pool (see Overview). Reimbursement tracks what you
+              still owe someone for what they fronted — use{" "}
+              <strong className="text-[var(--foreground)]">Settle all</strong> or{" "}
+              <strong className="text-[var(--foreground)]">Record partial</strong>{" "}
+              when paid from the pool. Mark one player as{" "}
+              <strong className="text-[var(--foreground)]">Treasurer</strong> if
+              they collect fees and should not appear as owed reimbursement.
+              Season fee is separate (Fee status).
             </p>
           </section>
               </>
