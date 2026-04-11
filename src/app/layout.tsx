@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -17,6 +17,13 @@ export const metadata: Metadata = {
   description: "Track fees, expenses, and balances for Garden State 11",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: "#0c0f14",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen font-sans antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen touch-manipulation font-sans antialiased`}
       >
         {children}
       </body>

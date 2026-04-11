@@ -1,10 +1,7 @@
-export type ExpenseCategory =
-  | "equipment"
-  | "field"
-  | "umpire"
-  | "balls"
-  | "food"
-  | "other";
+export type ExpenseCategoryDef = {
+  id: string;
+  label: string;
+};
 
 export type Player = {
   id: string;
@@ -22,7 +19,8 @@ export type Expense = {
   amount: number;
   description: string;
   paidByPlayerId: string;
-  category: ExpenseCategory;
+  /** Matches `ExpenseCategoryDef.id` from app settings. */
+  category: string;
 };
 
 export type Season = {
@@ -43,13 +41,32 @@ export type AppState = {
   version: 1;
   seasons: Season[];
   currentSeasonId: string | null;
+  /** User-editable expense type list (Audit → Expense types). */
+  expenseCategories: ExpenseCategoryDef[];
 };
 
-export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
-  equipment: "Equipment",
-  field: "Field / venue",
-  umpire: "Umpire",
-  balls: "Balls / kit",
-  food: "Food / drinks",
-  other: "Other",
-};
+/** Seeded for new installs and when `expenseCategories` is missing in storage. */
+export const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategoryDef[] = [
+  { id: "equipment", label: "Equipment" },
+  { id: "field", label: "Field / venue" },
+  { id: "umpire", label: "Umpire" },
+  { id: "balls", label: "Balls / kit" },
+  { id: "food", label: "Food / drinks" },
+  { id: "other", label: "Other" },
+];
+
+export function expenseCategoryLabel(
+  categories: ExpenseCategoryDef[],
+  categoryId: string,
+): string {
+  return categories.find((c) => c.id === categoryId)?.label ?? categoryId;
+}
+
+export function isExpenseCategoryInUse(
+  state: AppState,
+  categoryId: string,
+): boolean {
+  return state.seasons.some((s) =>
+    s.expenses.some((e) => e.category === categoryId),
+  );
+}

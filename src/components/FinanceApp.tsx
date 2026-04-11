@@ -8,8 +8,8 @@ import {
   parsePlayerNamesBlob,
   suggestedCarryOver,
 } from "@/lib/finance";
+import { useFinanceState } from "@/hooks/useFinanceState";
 import {
-  appendSnapshot,
   clearSnapshots,
   loadSnapshots,
   removeSnapshot,
@@ -20,49 +20,16 @@ import {
   exportStateJson,
   findSeason,
   importStateJson,
-  loadState,
-  saveState,
+  normalizeAppState,
 } from "@/lib/storage";
-import type { AppState, Expense, ExpenseCategory, Player, Season } from "@/lib/types";
-import { EXPENSE_CATEGORY_LABELS } from "@/lib/types";
+import type { AppState, Expense, Player, Season } from "@/lib/types";
+import {
+  DEFAULT_EXPENSE_CATEGORIES,
+  expenseCategoryLabel,
+  isExpenseCategoryInUse,
+} from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-function useFinanceState() {
-  const [state, setState] = useState<AppState | null>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setState(loadState());
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!ready || !state) return;
-    saveState(state);
-  }, [state, ready]);
-
-  const update = useCallback((fn: (s: AppState) => AppState) => {
-    setState((prev) => {
-      if (!prev) return prev;
-      appendSnapshot(prev);
-      return fn(prev);
-    });
-  }, []);
-
-  const replaceState = useCallback((next: AppState) => {
-    setState((prev) => {
-      if (prev) appendSnapshot(prev);
-      return next;
-    });
-  }, []);
-
-  return {
-    state,
-    replaceState,
-    update,
-    ready: ready && state !== null,
-  };
-}
+import { TeamLogin } from "@/components/TeamLogin";
 
 type MainTabId = "dashboard" | "history" | "add" | "audit";
 
@@ -94,7 +61,7 @@ function Card({
           : "border-[var(--border)]";
   return (
     <div
-      className={`rounded-xl border ${border} bg-[var(--card)] p-4 shadow-sm`}
+      className={`rounded-xl border ${border} bg-[var(--card)] p-3 shadow-sm sm:p-4`}
     >
       <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
         {title}
@@ -108,7 +75,22 @@ function Card({
 }
 
 export function FinanceApp() {
-  const { state, replaceState, update, ready } = useFinanceState();
+  const {
+    state,
+    replaceState,
+    update,
+    ready: hookReady,
+    remoteMode,
+    authRequired,
+    remoteError,
+    login,
+    logout,
+    conflictNotice,
+    clearConflictNotice,
+    refreshFromServer,
+    flushRemoteSave,
+  } = useFinanceState();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showNewSeason, setShowNewSeason] = useState(false);
@@ -121,8 +103,8 @@ export function FinanceApp() {
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expensePaidBy, setExpensePaidBy] = useState("");
-  const [expenseCategory, setExpenseCategory] =
-    useState<ExpenseCategory>("other");
+  const [expenseCategory, setExpenseCategory] = useState("");
+  const [newExpenseTypeLabel, setNewExpenseTypeLabel] = useState("");
   const [expenseDate, setExpenseDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
@@ -167,6 +149,15 @@ export function FinanceApp() {
       );
     }
   }, [season?.id, season?.carryOverAmount, season?.initialFeePerPlayer]);
+
+  useEffect(() => {
+    if (!state?.expenseCategories.length) return;
+    setExpenseCategory((prev) =>
+      prev && state.expenseCategories.some((c) => c.id === prev)
+        ? prev
+        : state.expenseCategories[0].id,
+    );
+  }, [state]);
 
   useEffect(() => {
     setActiveTab("dashboard");
@@ -221,10 +212,15 @@ export function FinanceApp() {
   };
 
   const addExpense = () => {
-    if (!season || season.players.length === 0) return;
+    if (!season || season.players.length === 0 || !state) return;
     const amt = Number.parseFloat(expenseAmount);
     if (!Number.isFinite(amt) || amt <= 0 || !expenseDesc.trim()) return;
     if (!expensePaidBy || !season.players.some((p) => p.id === expensePaidBy))
+      return;
+    if (
+      !expenseCategory ||
+      !state.expenseCategories.some((c) => c.id === expenseCategory)
+    )
       return;
 
     const e: Expense = {
@@ -406,6 +402,9 @@ export function FinanceApp() {
           return;
         replaceState(imported);
         setSnapRev((x) => x + 1);
+        setTimeout(() => {
+          void flushRemoteSave();
+        }, 0);
       } catch {
         alert("Could not read that file.");
       }
@@ -420,8 +419,11 @@ export function FinanceApp() {
       )
     )
       return;
-    replaceState(snap.state);
+    replaceState(normalizeAppState(snap.state));
     setSnapRev((x) => x + 1);
+    setTimeout(() => {
+      void flushRemoteSave();
+    }, 0);
   };
 
   const deleteSnapshotById = (id: string) => {
@@ -440,7 +442,87 @@ export function FinanceApp() {
     setSnapRev((x) => x + 1);
   };
 
-  if (!ready || !state) {
+  const addExpenseType = () => {
+    if (!state) return;
+    const label = newExpenseTypeLabel.trim();
+    if (!label) return;
+    update((app) => ({
+      ...app,
+      expenseCategories: [...app.expenseCategories, { id: newId(), label }],
+    }));
+    setNewExpenseTypeLabel("");
+  };
+
+  const renameExpenseType = (id: string, label: string) => {
+    update((app) => ({
+      ...app,
+      expenseCategories: app.expenseCategories.map((c) =>
+        c.id === id ? { ...c, label: label.trim() || c.label } : c,
+      ),
+    }));
+  };
+
+  const removeExpenseType = (id: string) => {
+    if (!state) return;
+    if (state.expenseCategories.length <= 1) {
+      alert("Keep at least one expense type.");
+      return;
+    }
+    if (isExpenseCategoryInUse(state, id)) {
+      alert(
+        "This type is used on an expense. Change or delete those expenses first.",
+      );
+      return;
+    }
+    update((app) => ({
+      ...app,
+      expenseCategories: app.expenseCategories.filter((c) => c.id !== id),
+    }));
+  };
+
+  const resetExpenseTypesToDefaults = () => {
+    if (
+      !confirm(
+        "Reset expense types to the built-in list? Custom types are removed from the picker; old expenses still reference their saved type id.",
+      )
+    )
+      return;
+    update((app) => ({
+      ...app,
+      expenseCategories: DEFAULT_EXPENSE_CATEGORIES.map((c) => ({ ...c })),
+    }));
+  };
+
+  if (!hookReady) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-[var(--muted)]">
+        Loading…
+      </div>
+    );
+  }
+
+  if (remoteMode && authRequired) {
+    return <TeamLogin onLogin={login} error={remoteError} />;
+  }
+
+  if (remoteMode && !state && remoteError) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-16 text-center">
+        <p className="text-sm text-[var(--danger)]" role="alert">
+          {remoteError}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refreshFromServer()}
+          className="mt-4 min-h-11 rounded-lg border border-[var(--border)] px-4 py-2 text-sm"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (!state) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-[var(--muted)]">
         Loading…
@@ -449,23 +531,36 @@ export function FinanceApp() {
   }
 
   return (
-    <div className="space-y-10">
-      <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-8 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+    <div className="space-y-6 sm:space-y-10">
+      <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-6 sm:flex-row sm:items-start sm:justify-between sm:pb-8">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
             Garden State 11
           </h1>
           <p className="mt-1 max-w-xl text-sm text-[var(--muted)]">
-            Team money is one pool (carry-over + fees). Recording an expense
-            lowers the pool total; whoever paid is owed that amount back from the
-            pool when you reimburse them. Season fees are tracked separately.
-            Data stays in your browser; auto-backups keep prior versions when you
-            change something.
+            Pool accounting for fees and expenses. Recording spend lowers the fund;
+            whoever paid is shown as owed reimbursement.
+            {remoteMode ? (
+              <>
+                {" "}
+                This deploy shares one live dataset for the team (sign in with the
+                shared password). Local snapshots and backups still live in your
+                browser — see{" "}
+                <strong className="text-[var(--foreground)]">Audit</strong>.
+              </>
+            ) : (
+              <>
+                {" "}
+                Works offline in your browser — open{" "}
+                <strong className="text-[var(--foreground)]">Audit</strong> for
+                storage, backups, and custom expense types.
+              </>
+            )}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <select
-            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+            className="min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm sm:min-h-10 sm:w-auto"
             value={state.currentSeasonId ?? ""}
             onChange={(e) =>
               update((a) => ({
@@ -486,7 +581,7 @@ export function FinanceApp() {
           <button
             type="button"
             onClick={openNewSeason}
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="min-h-11 w-full rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 sm:min-h-10 sm:w-auto"
           >
             New season
           </button>
@@ -502,6 +597,25 @@ export function FinanceApp() {
           }}
         />
       </header>
+
+      {conflictNotice ? (
+        <div
+          className="flex flex-col gap-3 rounded-xl border border-[var(--warn)]/45 bg-[var(--warn)]/10 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          role="status"
+        >
+          <p className="text-[var(--foreground)]">
+            Another session saved first. This tab was updated to match the server
+            so you don&apos;t overwrite their changes.
+          </p>
+          <button
+            type="button"
+            onClick={clearConflictNotice}
+            className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {showNewSeason ? (
         <div
@@ -632,7 +746,7 @@ export function FinanceApp() {
       ) : (
         <>
           <nav
-            className="-mx-1 flex flex-wrap gap-1 border-b border-[var(--border)]"
+            className="-mx-2 flex gap-1 overflow-x-auto overscroll-x-contain border-b border-[var(--border)] px-2 pb-px [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
             role="tablist"
             aria-label="Main sections"
           >
@@ -642,7 +756,7 @@ export function FinanceApp() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === t.id}
-                className={`rounded-t-lg border-b-2 px-3 py-2.5 text-sm font-medium sm:px-4 ${
+                className={`shrink-0 whitespace-nowrap rounded-t-lg border-b-2 px-3 py-3 text-sm font-medium sm:px-4 sm:py-2.5 ${
                   activeTab === t.id
                     ? "border-[var(--accent)] bg-[var(--card)]/70 text-[var(--foreground)]"
                     : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -654,7 +768,7 @@ export function FinanceApp() {
             ))}
           </nav>
 
-          <div className="mt-6 space-y-8">
+          <div className="mt-4 space-y-6 sm:mt-6 sm:space-y-8">
             {activeTab === "dashboard" ? (
               <>
                 <section className="space-y-4">
@@ -710,7 +824,7 @@ export function FinanceApp() {
               </button>
             </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-              <table className="w-full min-w-[640px] text-left text-sm">
+              <table className="w-full min-w-[640px] text-left text-xs sm:text-sm">
                 <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                   <tr>
                     <th className="px-3 py-2">Player</th>
@@ -828,7 +942,7 @@ export function FinanceApp() {
                   <p className="text-sm text-[var(--muted)]">No expenses yet.</p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                    <table className="w-full min-w-[720px] text-left text-sm">
+                    <table className="w-full min-w-[720px] text-left text-xs sm:text-sm">
                       <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                         <tr>
                           <th className="px-3 py-2">#</th>
@@ -859,7 +973,7 @@ export function FinanceApp() {
                               </td>
                               <td className="px-3 py-2 font-medium">{e.description}</td>
                               <td className="px-3 py-2 text-[var(--muted)]">
-                                {EXPENSE_CATEGORY_LABELS[e.category]}
+                                {expenseCategoryLabel(state.expenseCategories, e.category)}
                               </td>
                               <td className="px-3 py-2">{payer?.name ?? "—"}</td>
                               <td className="px-3 py-2 text-right tabular-nums">
@@ -904,7 +1018,7 @@ export function FinanceApp() {
                 <label className="text-sm sm:col-span-2">
                   <span className="text-[var(--muted)]">Description</span>
                   <input
-                    className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                    className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
                     value={expenseDesc}
                     onChange={(e) => setExpenseDesc(e.target.value)}
                   />
@@ -915,7 +1029,7 @@ export function FinanceApp() {
                     type="number"
                     min={0}
                     step="0.01"
-                    className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                    className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
                     value={expenseAmount}
                     onChange={(e) => setExpenseAmount(e.target.value)}
                   />
@@ -924,7 +1038,7 @@ export function FinanceApp() {
                   <span className="text-[var(--muted)]">Date</span>
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                    className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
                     value={expenseDate}
                     onChange={(e) => setExpenseDate(e.target.value)}
                   />
@@ -932,7 +1046,7 @@ export function FinanceApp() {
                 <label className="text-sm">
                   <span className="text-[var(--muted)]">Paid by</span>
                   <select
-                    className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                    className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
                     value={expensePaidBy}
                     onChange={(e) => setExpensePaidBy(e.target.value)}
                   >
@@ -946,19 +1060,19 @@ export function FinanceApp() {
                 <label className="text-sm">
                   <span className="text-[var(--muted)]">Category</span>
                   <select
-                    className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                    value={expenseCategory}
-                    onChange={(e) =>
-                      setExpenseCategory(e.target.value as ExpenseCategory)
+                    className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                    value={
+                      expenseCategory ||
+                      state.expenseCategories[0]?.id ||
+                      ""
                     }
+                    onChange={(e) => setExpenseCategory(e.target.value)}
                   >
-                    {(Object.keys(EXPENSE_CATEGORY_LABELS) as ExpenseCategory[]).map(
-                      (k) => (
-                        <option key={k} value={k}>
-                          {EXPENSE_CATEGORY_LABELS[k]}
-                        </option>
-                      ),
-                    )}
+                    {state.expenseCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -966,7 +1080,7 @@ export function FinanceApp() {
                 type="button"
                 onClick={addExpense}
                 disabled={season.players.length === 0}
-                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-12 w-full rounded-lg bg-[var(--accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-10 sm:w-auto sm:py-2"
               >
                 Record expense
               </button>
@@ -976,15 +1090,149 @@ export function FinanceApp() {
 
             {activeTab === "audit" ? (
               <div className="space-y-6">
-                <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
                   <h2 className="text-lg font-semibold">Audit</h2>
                   <p className="mt-1 text-sm text-[var(--muted)]">
-                    Season configuration, manual file backups, and auto-saved
-                    snapshots from this browser.
+                    Season settings, expense types, manual backups, and
+                    auto-saved snapshots.
                   </p>
+                  <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--background)] p-4 text-sm text-[var(--muted)]">
+                    <p className="font-medium text-[var(--foreground)]">
+                      Where your data is stored
+                    </p>
+                    <p className="mt-2 leading-relaxed">
+                      {remoteMode ? (
+                        <>
+                          The <strong>live books</strong> (seasons, players,
+                          expenses) are stored on the server database for this
+                          deploy so everyone sees the same numbers. Your session
+                          uses a team password cookie — use{" "}
+                          <strong className="text-[var(--foreground)]">
+                            Log out
+                          </strong>{" "}
+                          on a shared computer.{" "}
+                          <strong className="text-[var(--foreground)]">
+                            Auto-backups
+                          </strong>{" "}
+                          below are still only in this browser&apos;s{" "}
+                          <code className="rounded bg-[var(--card)] px-1.5 py-0.5 font-mono text-xs text-[var(--foreground)]">
+                            localStorage
+                          </code>{" "}
+                          (
+                          <code className="break-all font-mono text-xs text-[var(--foreground)]">
+                            gs11-finance-snapshots-v1
+                          </code>
+                          ). Use{" "}
+                          <strong className="text-[var(--foreground)]">
+                            Export backup
+                          </strong>{" "}
+                          for a portable JSON file.
+                        </>
+                      ) : (
+                        <>
+                          All data lives only on <strong>this device</strong>, in
+                          your browser&apos;s{" "}
+                          <code className="rounded bg-[var(--card)] px-1.5 py-0.5 font-mono text-xs text-[var(--foreground)]">
+                            localStorage
+                          </code>
+                          . Main app data uses key{" "}
+                          <code className="break-all font-mono text-xs text-[var(--foreground)]">
+                            gs11-finance-v1
+                          </code>
+                          ; auto-backups use{" "}
+                          <code className="break-all font-mono text-xs text-[var(--foreground)]">
+                            gs11-finance-snapshots-v1
+                          </code>
+                          . Nothing is uploaded to a server. Use{" "}
+                          <strong className="text-[var(--foreground)]">
+                            Export backup
+                          </strong>{" "}
+                          to save a JSON file you can move to another device or
+                          keep safe.
+                        </>
+                      )}
+                    </p>
+                    {remoteMode ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void refreshFromServer()}
+                          className="min-h-10 rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm"
+                        >
+                          Refresh from server
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void logout()}
+                          className="min-h-10 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--muted)]"
+                        >
+                          Log out
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </section>
 
-                <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
+                  <h3 className="font-semibold">Expense types</h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    These appear in the category picker on{" "}
+                    <strong className="text-[var(--foreground)]">Add Expenses</strong>.
+                    You can&apos;t remove a type that is still used on a line item.
+                  </p>
+                  <ul className="space-y-3">
+                    {state.expenseCategories.map((c) => (
+                      <li
+                        key={c.id}
+                        className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 sm:flex-row sm:items-center sm:gap-3"
+                      >
+                        <input
+                          className="min-h-11 w-full flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 sm:min-h-10"
+                          value={c.label}
+                          onChange={(e) =>
+                            renameExpenseType(c.id, e.target.value)
+                          }
+                          aria-label={`Rename expense type: ${c.label}`}
+                        />
+                        <button
+                          type="button"
+                          className="min-h-11 shrink-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={
+                            state.expenseCategories.length <= 1 ||
+                            isExpenseCategoryInUse(state, c.id)
+                          }
+                          onClick={() => removeExpenseType(c.id)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <input
+                      className="min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:max-w-xs"
+                      placeholder="New type name"
+                      value={newExpenseTypeLabel}
+                      onChange={(e) => setNewExpenseTypeLabel(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+                      onClick={addExpenseType}
+                    >
+                      Add type
+                    </button>
+                    <button
+                      type="button"
+                      className="min-h-11 rounded-lg border border-[var(--border)] px-4 py-2 text-sm"
+                      onClick={resetExpenseTypesToDefaults}
+                    >
+                      Reset defaults
+                    </button>
+                  </div>
+                </section>
+
+                <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
                   <h3 className="font-semibold">Season settings</h3>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <label className="text-sm">
@@ -993,7 +1241,7 @@ export function FinanceApp() {
                         type="number"
                         min={0}
                         step="0.01"
-                        className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                        className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:min-h-10"
                         value={editFee}
                         onChange={(e) => setEditFee(e.target.value)}
                       />
@@ -1004,16 +1252,16 @@ export function FinanceApp() {
                         type="number"
                         min={0}
                         step="0.01"
-                        className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                        className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 sm:min-h-10"
                         value={editCarry}
                         onChange={(e) => setEditCarry(e.target.value)}
                       />
                     </label>
-                    <div className="flex items-end gap-2">
+                    <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:flex-wrap sm:items-end">
                       <button
                         type="button"
                         onClick={saveSeasonMeta}
-                        className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+                        className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white sm:min-h-10"
                       >
                         Save settings
                       </button>
@@ -1021,18 +1269,16 @@ export function FinanceApp() {
                         <button
                           type="button"
                           onClick={pullCarryFromPrior}
-                          className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                          className="min-h-11 rounded-lg border border-[var(--border)] px-3 py-2.5 text-sm sm:min-h-10"
                           title="Overwrite carry-over with current cash-left from linked season"
                         >
                           Sync from prior
                         </button>
                       ) : null}
-                    </div>
-                    <div className="flex items-end">
                       <button
                         type="button"
                         onClick={deleteSeason}
-                        className="rounded-lg border border-[var(--danger)]/50 px-4 py-2 text-sm text-[var(--danger)]"
+                        className="min-h-11 rounded-lg border border-[var(--danger)]/50 px-4 py-2.5 text-sm text-[var(--danger)] sm:min-h-10"
                       >
                         Delete season
                       </button>
@@ -1049,31 +1295,31 @@ export function FinanceApp() {
                   ) : null}
                 </section>
 
-                <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
                   <h3 className="font-semibold">Export &amp; import</h3>
                   <p className="text-sm text-[var(--muted)]">
                     Download a JSON file or restore from a backup. Your current
                     data is snapshotted before import.
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <button
                       type="button"
                       onClick={exportJson}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-sm"
+                      className="min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm sm:w-auto"
                     >
                       Export backup
                     </button>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-sm"
+                      className="min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm sm:w-auto"
                     >
                       Import backup
                     </button>
                   </div>
                 </section>
 
-                <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="font-semibold">Auto-backups</h3>
                     {snapshots.length > 0 ? (
