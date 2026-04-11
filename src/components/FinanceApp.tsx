@@ -171,6 +171,20 @@ export function FinanceApp() {
     const totalShortfall = unpaidPlayers.reduce((s, b) => s + b.feeShortfall, 0);
     return { unpaidPlayers, totalShortfall };
   }, [totals]);
+
+  const paybackOwedSummary = useMemo(() => {
+    if (!totals) {
+      return { owedPlayers: [] as PlayerBalance[], totalOwed: 0 };
+    }
+    const owedPlayers = totals.playerBalances.filter(
+      (b) => !b.isTreasurer && b.reimbursementOutstanding > 0.005,
+    );
+    const totalOwed = owedPlayers.reduce(
+      (s, b) => s + b.reimbursementOutstanding,
+      0,
+    );
+    return { owedPlayers, totalOwed };
+  }, [totals]);
   const [snapRev, setSnapRev] = useState(0);
   const [serverArchives, setServerArchives] = useState<
     { id: string; savedAt: string }[]
@@ -1046,51 +1060,6 @@ export function FinanceApp() {
                     </p>
                   </div>
 
-                  {totals &&
-                  feeCollectionSummary.unpaidPlayers.length > 0 &&
-                  season.players.length > 0 ? (
-                    <div
-                      className="rounded-2xl border-2 border-[var(--danger)]/55 bg-[var(--danger-soft)] px-4 py-4 shadow-[0_0_40px_-12px_rgba(232,93,93,0.45)] sm:px-5 sm:py-5"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
-                            Season fee not paid
-                          </p>
-                          <p className="mt-1 text-base font-semibold text-[var(--foreground)] sm:text-lg">
-                            {feeCollectionSummary.unpaidPlayers.length}{" "}
-                            {feeCollectionSummary.unpaidPlayers.length === 1
-                              ? "player still owes"
-                              : "players still owe"}{" "}
-                            <span className="tabular-nums text-[var(--danger)]">
-                              {formatMoney(feeCollectionSummary.totalShortfall)}
-                            </span>{" "}
-                            in fees
-                          </p>
-                          <p className="mt-1 text-sm text-[var(--muted)]">
-                            Highlighted in red below — collect before treating the
-                            season as fully funded.
-                          </p>
-                        </div>
-                      </div>
-                      <ul className="mt-4 flex flex-wrap gap-2">
-                        {feeCollectionSummary.unpaidPlayers.map((b) => (
-                          <li
-                            key={b.playerId}
-                            className="inline-flex items-center gap-2 rounded-full border border-[var(--danger)]/40 bg-[var(--background)]/80 px-3 py-1.5 text-sm font-medium text-[var(--foreground)]"
-                          >
-                            <span>{b.name}</span>
-                            <span className="tabular-nums text-[var(--danger)]">
-                              {formatMoney(b.feeShortfall)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
                   {totals ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <Card
@@ -1129,7 +1098,100 @@ export function FinanceApp() {
               </p>
             ) : null}
 
-            {totals && season.players.length > 0 ? (
+            <div className="space-y-4">
+              {totals &&
+              feeCollectionSummary.unpaidPlayers.length > 0 &&
+              season.players.length > 0 ? (
+                <div
+                  className="rounded-2xl border-2 border-[var(--danger)]/55 bg-[var(--danger-soft)] px-4 py-4 shadow-[0_0_40px_-12px_rgba(232,93,93,0.45)] sm:px-5 sm:py-5"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
+                        Season fee not paid
+                      </p>
+                      <p className="mt-1 text-base font-semibold text-[var(--foreground)] sm:text-lg">
+                        {feeCollectionSummary.unpaidPlayers.length}{" "}
+                        {feeCollectionSummary.unpaidPlayers.length === 1
+                          ? "player still owes"
+                          : "players still owe"}{" "}
+                        <span className="tabular-nums text-[var(--danger)]">
+                          {formatMoney(feeCollectionSummary.totalShortfall)}
+                        </span>{" "}
+                        in fees
+                      </p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        Highlighted in red in Players &amp; fees below — collect
+                        before treating the season as fully funded.
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="mt-4 flex flex-wrap gap-2">
+                    {feeCollectionSummary.unpaidPlayers.map((b) => (
+                      <li
+                        key={b.playerId}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--danger)]/40 bg-[var(--background)]/80 px-3 py-1.5 text-sm font-medium text-[var(--foreground)]"
+                      >
+                        <span>{b.name}</span>
+                        <span className="tabular-nums text-[var(--danger)]">
+                          {formatMoney(b.feeShortfall)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {totals &&
+              paybackOwedSummary.owedPlayers.length > 0 &&
+              season.players.length > 0 ? (
+                <div
+                  className="rounded-2xl border-2 border-[var(--warn)]/55 bg-[var(--warn-soft)] px-4 py-4 shadow-[0_0_40px_-12px_rgba(232,184,74,0.35)] sm:px-5 sm:py-5"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[var(--warn)]">
+                        Owed money
+                      </p>
+                      <p className="mt-1 text-base font-semibold text-[var(--foreground)] sm:text-lg">
+                        The pool still owes{" "}
+                        <span className="tabular-nums text-[var(--warn)]">
+                          {formatMoney(paybackOwedSummary.totalOwed)}
+                        </span>{" "}
+                        to{" "}
+                        {paybackOwedSummary.owedPlayers.length === 1
+                          ? "1 player"
+                          : `${paybackOwedSummary.owedPlayers.length} players`}{" "}
+                        for reimbursed expenses.
+                      </p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        Highlighted in amber in Players &amp; fees below — separate
+                        from season fees.
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="mt-4 flex flex-wrap gap-2">
+                    {paybackOwedSummary.owedPlayers.map((b) => (
+                      <li
+                        key={b.playerId}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--warn)]/45 bg-[var(--background)]/80 px-3 py-1.5 text-sm font-medium text-[var(--foreground)]"
+                      >
+                        <span>{b.name}</span>
+                        <span className="tabular-nums text-[var(--warn)]">
+                          {formatMoney(b.reimbursementOutstanding)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+
+            {!isViewer && totals && season.players.length > 0 ? (
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.5)] sm:p-5">
                 <h3 className="text-sm font-semibold text-[var(--foreground)]">
                   Outstanding fees &amp; paybacks
