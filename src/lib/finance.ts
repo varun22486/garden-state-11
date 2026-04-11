@@ -11,8 +11,8 @@ export type PlayerBalance = {
   /** Equal share of all team expenses across all players. */
   expenseShare: number;
   /**
-   * feePaid + outOfPocket − expenseShare.
-   * Positive → refund pending from the team pool; negative → amount they owe.
+   * outOfPocket − expenseShare only (season fee is separate; not refundable here).
+   * Positive → refund pending for team expenses they fronted; negative → owe toward share.
    */
   netBalance: number;
 };
@@ -50,7 +50,7 @@ export function computeSeasonTotals(season: Season): SeasonTotals {
     const feeRequired = season.initialFeePerPlayer;
     const feeShortfall = Math.max(0, feeRequired - p.feePaid);
     const expenseShare = expenseShareEach;
-    const netBalance = p.feePaid + outOfPocket - expenseShareEach;
+    const netBalance = outOfPocket - expenseShareEach;
 
     return {
       playerId: p.id,

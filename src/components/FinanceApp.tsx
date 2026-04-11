@@ -65,6 +65,15 @@ function useFinanceState() {
   };
 }
 
+type MainTabId = "dashboard" | "history" | "add" | "audit";
+
+const MAIN_TABS: { id: MainTabId; label: string }[] = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "history", label: "Expenses History" },
+  { id: "add", label: "Add Expenses" },
+  { id: "audit", label: "Audit" },
+];
+
 function Card({
   title,
   value,
@@ -121,6 +130,7 @@ export function FinanceApp() {
 
   const [editCarry, setEditCarry] = useState("");
   const [editFee, setEditFee] = useState("");
+  const [activeTab, setActiveTab] = useState<MainTabId>("dashboard");
 
   const season = state ? findSeason(state, state.currentSeasonId) : null;
   const totals = useMemo(
@@ -132,6 +142,15 @@ export function FinanceApp() {
     () => loadSnapshots(),
     [state, snapRev],
   );
+  const expensesHistory = useMemo(() => {
+    if (!season) return [];
+    return [...season.expenses].sort((a, b) => {
+      const tb = new Date(b.date).getTime();
+      const ta = new Date(a.date).getTime();
+      if (Number.isFinite(tb) && Number.isFinite(ta) && tb !== ta) return tb - ta;
+      return b.id.localeCompare(a.id);
+    });
+  }, [season]);
 
   useEffect(() => {
     if (season) {
@@ -143,6 +162,10 @@ export function FinanceApp() {
       );
     }
   }, [season?.id, season?.carryOverAmount, season?.initialFeePerPlayer]);
+
+  useEffect(() => {
+    setActiveTab("dashboard");
+  }, [season?.id]);
 
   const openNewSeason = () => {
     const y = new Date().getFullYear();
@@ -216,6 +239,7 @@ export function FinanceApp() {
     }));
     setExpenseAmount("");
     setExpenseDesc("");
+    setActiveTab("history");
   };
 
   const removeExpense = (expenseId: string) => {
@@ -427,10 +451,10 @@ export function FinanceApp() {
             Garden State 11
           </h1>
           <p className="mt-1 max-w-xl text-sm text-[var(--muted)]">
-            Track fees and who paid team expenses. Expenses you record under a
-            player count toward their refund; everyone owes an equal share of
-            total expenses. Data stays in your browser; auto-backups keep prior
-            versions when you change something.
+            Track season fees separately from shared expenses. Log expenses under
+            who paid—refunds vs what you owe use only those payments vs your
+            equal share of total expenses. Data stays in your browser;
+            auto-backups keep prior versions when you change something.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -460,31 +484,17 @@ export function FinanceApp() {
           >
             New season
           </button>
-          <button
-            type="button"
-            onClick={exportJson}
-            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-          >
-            Export backup
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-          >
-            Import backup
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              onImportFile(e.target.files?.[0] ?? null);
-              e.target.value = "";
-            }}
-          />
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => {
+            onImportFile(e.target.files?.[0] ?? null);
+            e.target.value = "";
+          }}
+        />
       </header>
 
       {showNewSeason ? (
@@ -615,8 +625,34 @@ export function FinanceApp() {
         <p className="text-[var(--muted)]">Select a season above.</p>
       ) : (
         <>
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold">Overview — {season.label}</h2>
+          <nav
+            className="-mx-1 flex flex-wrap gap-1 border-b border-[var(--border)]"
+            role="tablist"
+            aria-label="Main sections"
+          >
+            {MAIN_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === t.id}
+                className={`rounded-t-lg border-b-2 px-3 py-2.5 text-sm font-medium sm:px-4 ${
+                  activeTab === t.id
+                    ? "border-[var(--accent)] bg-[var(--card)]/70 text-[var(--foreground)]"
+                    : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+                }`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="mt-6 space-y-8">
+            {activeTab === "dashboard" ? (
+              <>
+                <section className="space-y-4">
+                  <h2 className="text-lg font-semibold">Overview — {season.label}</h2>
             {totals ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <Card
@@ -656,124 +692,7 @@ export function FinanceApp() {
             ) : null}
           </section>
 
-          <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-            <h3 className="font-semibold">Season settings</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="text-sm">
-                <span className="text-[var(--muted)]">Fee per player ($)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                  value={editFee}
-                  onChange={(e) => setEditFee(e.target.value)}
-                />
-              </label>
-              <label className="text-sm">
-                <span className="text-[var(--muted)]">Carry-over ($)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                  value={editCarry}
-                  onChange={(e) => setEditCarry(e.target.value)}
-                />
-              </label>
-              <div className="flex items-end gap-2">
-                <button
-                  type="button"
-                  onClick={saveSeasonMeta}
-                  className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
-                >
-                  Save settings
-                </button>
-                {season.carryOverFromSeasonId ? (
-                  <button
-                    type="button"
-                    onClick={pullCarryFromPrior}
-                    className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
-                    title="Overwrite carry-over with current cash-left from linked season"
-                  >
-                    Sync from prior
-                  </button>
-                ) : null}
-              </div>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={deleteSeason}
-                  className="rounded-lg border border-[var(--danger)]/50 px-4 py-2 text-sm text-[var(--danger)]"
-                >
-                  Delete season
-                </button>
-              </div>
-            </div>
-            {season.carryOverFromSeasonId ? (
-              <p className="text-xs text-[var(--muted)]">
-                Linked prior:{" "}
-                {findSeason(state, season.carryOverFromSeasonId)?.label ??
-                  "(missing)"}{" "}
-                — use &quot;Sync from prior&quot; to refresh carry-over from
-                that season&apos;s current cash remaining.
-              </p>
-            ) : null}
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-semibold">Auto-backups</h3>
-              {snapshots.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={clearSnapshotHistory}
-                  className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
-                >
-                  Clear history
-                </button>
-              ) : null}
-            </div>
-            <p className="text-sm text-[var(--muted)]">
-              Each time you save or change data, the previous full state is kept
-              here (last {SNAPSHOT_MAX_STORED} versions). Restore if you need to
-              undo.
-            </p>
-            {snapshots.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">No snapshots yet.</p>
-            ) : (
-              <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
-                {snapshots.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-                  >
-                    <span className="text-[var(--muted)]">
-                      {new Date(s.savedAt).toLocaleString()}
-                    </span>
-                    <span className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => restoreFromSnapshot(s)}
-                        className="text-xs font-medium text-[var(--accent)] hover:underline"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteSnapshotById(s.id)}
-                        className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
-                      >
-                        Remove
-                      </button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="space-y-4">
+                <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Players & fees</h3>
               <button
@@ -889,16 +808,75 @@ export function FinanceApp() {
               </table>
             </div>
             <p className="text-xs text-[var(--muted)]">
-              Refund pending or Owes compares what you put in (season fee + team
-              expenses you paid) to your equal share of all recorded expenses.
-              Add expenses under the person who paid so their refund builds up.
+              Refund pending or Owes is only about team expenses: what you paid
+              out of pocket for the group vs your equal share. Season fee is
+              tracked separately in Fee status and is not treated as a refund.
             </p>
           </section>
+              </>
+            ) : null}
 
-          <section>
-            <div className="max-w-2xl space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-              <h3 className="font-semibold">Add expense</h3>
-              {season.players.length === 0 ? (
+            {activeTab === "history" ? (
+              <section className="space-y-3">
+                <h2 className="text-lg font-semibold">Expenses History</h2>
+                <p className="text-sm text-[var(--muted)]">
+                  Newest first by date.{" "}
+                  {season.expenses.length === 0
+                    ? "No entries yet."
+                    : `${season.expenses.length} entr${season.expenses.length === 1 ? "y" : "ies"} this season.`}
+                </p>
+                {season.expenses.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">No expenses yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {expensesHistory.map((e) => {
+                      const payer = season.players.find(
+                        (p) => p.id === e.paidByPlayerId,
+                      );
+                      return (
+                        <li
+                          key={e.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm"
+                        >
+                          <div>
+                            <span className="font-medium">{e.description}</span>
+                            <span className="mx-2 text-[var(--muted)]">·</span>
+                            <span className="text-[var(--muted)]">
+                              {EXPENSE_CATEGORY_LABELS[e.category]}
+                            </span>
+                            <span className="mx-2 text-[var(--muted)]">·</span>
+                            <span className="text-[var(--muted)]">{e.date}</span>
+                            <span className="mx-2 text-[var(--muted)]">·</span>
+                            Paid by {payer?.name ?? "?"}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="tabular-nums font-semibold">
+                              {formatMoney(e.amount)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeExpense(e.id)}
+                              className="text-xs text-[var(--danger)] hover:underline"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            ) : null}
+
+            {activeTab === "add" ? (
+              <section>
+                <div className="max-w-2xl space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                  <h2 className="text-lg font-semibold">Add Expenses</h2>
+                  <p className="text-sm text-[var(--muted)]">
+                    Record who paid so refunds and shares stay accurate.
+                  </p>
+                  {season.players.length === 0 ? (
                 <p className="text-sm text-[var(--warn)]">
                   Add at least one player before recording expenses.
                 </p>
@@ -973,53 +951,162 @@ export function FinanceApp() {
               >
                 Record expense
               </button>
-            </div>
-          </section>
+                </div>
+              </section>
+            ) : null}
 
-          <section className="space-y-3">
-            <h3 className="text-lg font-semibold">Expense log</h3>
-            {season.expenses.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">No expenses yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {season.expenses.map((e) => {
-                  const payer = season.players.find(
-                    (p) => p.id === e.paidByPlayerId,
-                  );
-                  return (
-                    <li
-                      key={e.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm"
-                    >
-                      <div>
-                        <span className="font-medium">{e.description}</span>
-                        <span className="mx-2 text-[var(--muted)]">·</span>
-                        <span className="text-[var(--muted)]">
-                          {EXPENSE_CATEGORY_LABELS[e.category]}
-                        </span>
-                        <span className="mx-2 text-[var(--muted)]">·</span>
-                        <span className="text-[var(--muted)]">{e.date}</span>
-                        <span className="mx-2 text-[var(--muted)]">·</span>
-                        Paid by {payer?.name ?? "?"}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="tabular-nums font-semibold">
-                          {formatMoney(e.amount)}
-                        </span>
+            {activeTab === "audit" ? (
+              <div className="space-y-6">
+                <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                  <h2 className="text-lg font-semibold">Audit</h2>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    Season configuration, manual file backups, and auto-saved
+                    snapshots from this browser.
+                  </p>
+                </section>
+
+                <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                  <h3 className="font-semibold">Season settings</h3>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <label className="text-sm">
+                      <span className="text-[var(--muted)]">Fee per player ($)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                        value={editFee}
+                        onChange={(e) => setEditFee(e.target.value)}
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="text-[var(--muted)]">Carry-over ($)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                        value={editCarry}
+                        onChange={(e) => setEditCarry(e.target.value)}
+                      />
+                    </label>
+                    <div className="flex items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={saveSeasonMeta}
+                        className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+                      >
+                        Save settings
+                      </button>
+                      {season.carryOverFromSeasonId ? (
                         <button
                           type="button"
-                          onClick={() => removeExpense(e.id)}
-                          className="text-xs text-[var(--danger)] hover:underline"
+                          onClick={pullCarryFromPrior}
+                          className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                          title="Overwrite carry-over with current cash-left from linked season"
                         >
-                          Delete
+                          Sync from prior
                         </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
+                      ) : null}
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={deleteSeason}
+                        className="rounded-lg border border-[var(--danger)]/50 px-4 py-2 text-sm text-[var(--danger)]"
+                      >
+                        Delete season
+                      </button>
+                    </div>
+                  </div>
+                  {season.carryOverFromSeasonId ? (
+                    <p className="text-xs text-[var(--muted)]">
+                      Linked prior:{" "}
+                      {findSeason(state, season.carryOverFromSeasonId)?.label ??
+                        "(missing)"}{" "}
+                      — use &quot;Sync from prior&quot; to refresh carry-over from
+                      that season&apos;s current cash remaining.
+                    </p>
+                  ) : null}
+                </section>
+
+                <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                  <h3 className="font-semibold">Export &amp; import</h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    Download a JSON file or restore from a backup. Your current
+                    data is snapshotted before import.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={exportJson}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-sm"
+                    >
+                      Export backup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-sm"
+                    >
+                      Import backup
+                    </button>
+                  </div>
+                </section>
+
+                <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-semibold">Auto-backups</h3>
+                    {snapshots.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={clearSnapshotHistory}
+                        className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                      >
+                        Clear history
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="text-sm text-[var(--muted)]">
+                    Each change keeps the previous full state (last{" "}
+                    {SNAPSHOT_MAX_STORED} versions).
+                  </p>
+                  {snapshots.length === 0 ? (
+                    <p className="text-sm text-[var(--muted)]">No snapshots yet.</p>
+                  ) : (
+                    <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
+                      {snapshots.map((s) => (
+                        <li
+                          key={s.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2"
+                        >
+                          <span className="text-[var(--muted)]">
+                            {new Date(s.savedAt).toLocaleString()}
+                          </span>
+                          <span className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => restoreFromSnapshot(s)}
+                              className="text-xs font-medium text-[var(--accent)] hover:underline"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSnapshotById(s.id)}
+                              className="text-xs text-[var(--muted)] hover:text-[var(--danger)]"
+                            >
+                              Remove
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            ) : null}
+          </div>
         </>
       )}
     </div>
