@@ -141,13 +141,19 @@ export function FinanceApp() {
     () => loadSnapshots(),
     [state, snapRev],
   );
-  const expensesHistory = useMemo(() => {
+  /** Oldest first so running total reads naturally top → bottom. */
+  const expensesHistoryRows = useMemo(() => {
     if (!season) return [];
-    return [...season.expenses].sort((a, b) => {
-      const tb = new Date(b.date).getTime();
+    const sorted = [...season.expenses].sort((a, b) => {
       const ta = new Date(a.date).getTime();
-      if (Number.isFinite(tb) && Number.isFinite(ta) && tb !== ta) return tb - ta;
-      return b.id.localeCompare(a.id);
+      const tb = new Date(b.date).getTime();
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) return ta - tb;
+      return a.id.localeCompare(b.id);
+    });
+    let running = 0;
+    return sorted.map((e) => {
+      running += e.amount;
+      return { expense: e, runningTotal: running };
     });
   }, [season]);
 
@@ -813,51 +819,70 @@ export function FinanceApp() {
               <section className="space-y-3">
                 <h2 className="text-lg font-semibold">Expenses History</h2>
                 <p className="text-sm text-[var(--muted)]">
-                  Newest first by date.{" "}
-                  {season.expenses.length === 0
-                    ? "No entries yet."
-                    : `${season.expenses.length} entr${season.expenses.length === 1 ? "y" : "ies"} this season.`}
+                  Oldest first. Running total is cumulative spend for this season
+                  {season.expenses.length > 0
+                    ? ` (${season.expenses.length} entr${season.expenses.length === 1 ? "y" : "ies"}).`
+                    : "."}
                 </p>
                 {season.expenses.length === 0 ? (
                   <p className="text-sm text-[var(--muted)]">No expenses yet.</p>
                 ) : (
-                  <ul className="space-y-2">
-                    {expensesHistory.map((e) => {
-                      const payer = season.players.find(
-                        (p) => p.id === e.paidByPlayerId,
-                      );
-                      return (
-                        <li
-                          key={e.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm"
-                        >
-                          <div>
-                            <span className="font-medium">{e.description}</span>
-                            <span className="mx-2 text-[var(--muted)]">·</span>
-                            <span className="text-[var(--muted)]">
-                              {EXPENSE_CATEGORY_LABELS[e.category]}
-                            </span>
-                            <span className="mx-2 text-[var(--muted)]">·</span>
-                            <span className="text-[var(--muted)]">{e.date}</span>
-                            <span className="mx-2 text-[var(--muted)]">·</span>
-                            Paid by {payer?.name ?? "?"}
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="tabular-nums font-semibold">
-                              {formatMoney(e.amount)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeExpense(e.id)}
-                              className="text-xs text-[var(--danger)] hover:underline"
+                  <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+                    <table className="w-full min-w-[720px] text-left text-sm">
+                      <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
+                        <tr>
+                          <th className="px-3 py-2">#</th>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Description</th>
+                          <th className="px-3 py-2">Category</th>
+                          <th className="px-3 py-2">Paid by</th>
+                          <th className="px-3 py-2 text-right">Amount</th>
+                          <th className="px-3 py-2 text-right">Running total</th>
+                          <th className="px-3 py-2 text-right" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expensesHistoryRows.map(({ expense: e, runningTotal }, i) => {
+                          const payer = season.players.find(
+                            (p) => p.id === e.paidByPlayerId,
+                          );
+                          return (
+                            <tr
+                              key={e.id}
+                              className="border-b border-[var(--border)]/60"
                             >
-                              Delete
-                            </button>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                              <td className="px-3 py-2 tabular-nums text-[var(--muted)]">
+                                {i + 1}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap text-[var(--muted)]">
+                                {e.date}
+                              </td>
+                              <td className="px-3 py-2 font-medium">{e.description}</td>
+                              <td className="px-3 py-2 text-[var(--muted)]">
+                                {EXPENSE_CATEGORY_LABELS[e.category]}
+                              </td>
+                              <td className="px-3 py-2">{payer?.name ?? "—"}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatMoney(e.amount)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums font-medium text-[var(--accent)]">
+                                {formatMoney(runningTotal)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => removeExpense(e.id)}
+                                  className="text-xs text-[var(--danger)] hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </section>
             ) : null}
