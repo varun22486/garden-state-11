@@ -33,11 +33,13 @@ import {
 } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TeamLogin } from "@/components/TeamLogin";
+import { gardenState11UmpiringMatches } from "@/lib/umpiring-schedule";
 
-type MainTabId = "dashboard" | "history" | "add" | "audit";
+type MainTabId = "dashboard" | "umpiring" | "history" | "add" | "audit";
 
 const MAIN_TABS: { id: MainTabId; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "umpiring", label: "Umpiring" },
   { id: "history", label: "Expenses History" },
   { id: "add", label: "Add Expenses" },
   { id: "audit", label: "Audit" },
@@ -227,6 +229,8 @@ export function FinanceApp() {
       return { expense: e, runningTotal: running };
     });
   }, [season]);
+
+  const umpiringScheduleRows = useMemo(() => gardenState11UmpiringMatches(), []);
 
   useEffect(() => {
     if (season) {
@@ -1548,6 +1552,53 @@ export function FinanceApp() {
             </p>
           </section>
               </>
+            ) : null}
+
+            {activeTab === "umpiring" ? (
+              <section className="space-y-3">
+                <h2 className="text-lg font-semibold">Umpiring schedule</h2>
+                <p className="text-sm text-[var(--muted)]">
+                  Div-2 fixtures where Garden State 11 is the umpiring team
+                  (embedded league schedule).
+                </p>
+                {umpiringScheduleRows.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    No Garden State 11 umpiring rows in the schedule.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+                    <table className="w-full min-w-[640px] text-left text-xs sm:text-sm">
+                      <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
+                        <tr>
+                          <th className="px-3 py-2">Week</th>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Match</th>
+                          <th className="px-3 py-2">Home team</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {umpiringScheduleRows.map((r) => (
+                          <tr
+                            key={`${r.week}|${r.date}|${r.div2a}|${r.div2d}|${r.homeTeam}`}
+                            className="border-b border-[var(--border)]/60"
+                          >
+                            <td className="px-3 py-2 tabular-nums text-[var(--muted)]">
+                              {r.week}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-[var(--muted)]">
+                              {r.date}
+                            </td>
+                            <td className="px-3 py-2 font-medium">
+                              {r.div2a} vs {r.div2d}
+                            </td>
+                            <td className="px-3 py-2">{r.homeTeam}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             ) : null}
 
             {activeTab === "history" ? (
