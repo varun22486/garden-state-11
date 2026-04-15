@@ -263,7 +263,10 @@ export function FinanceApp() {
   const [serverArchives, setServerArchives] = useState<
     { id: string; savedAt: string }[]
   >([]);
-  const snapshots = useMemo(() => loadSnapshots(), [snapRev]);
+  const snapshots = useMemo(() => {
+    void snapRev;
+    return loadSnapshots();
+  }, [snapRev]);
 
   const refreshServerArchives = useCallback(async () => {
     if (!remoteMode) return;
@@ -1737,7 +1740,7 @@ export function FinanceApp() {
                                 onChange={(v) =>
                                   void onUmpiringAssign(mk, 1, v)
                                 }
-                                aria-label={`Umpire 1 for ${r.date} ${r.div2a} vs ${r.div2d}`}
+                                ariaLabel={`Umpire 1 for ${r.date} ${r.div2a} vs ${r.div2d}`}
                               />
                               <UmpireField
                                 label="Umpire 2"
@@ -1748,7 +1751,7 @@ export function FinanceApp() {
                                 onChange={(v) =>
                                   void onUmpiringAssign(mk, 2, v)
                                 }
-                                aria-label={`Umpire 2 for ${r.date} ${r.div2a} vs ${r.div2d}`}
+                                ariaLabel={`Umpire 2 for ${r.date} ${r.div2a} vs ${r.div2d}`}
                               />
                             </div>
                           </div>
