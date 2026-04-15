@@ -33,7 +33,10 @@ import {
 } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TeamLogin } from "@/components/TeamLogin";
-import { gardenState11UmpiringMatches } from "@/lib/umpiring-schedule";
+import {
+  div2MatchKey,
+  gardenState11UmpiringMatches,
+} from "@/lib/umpiring-schedule";
 
 type MainTabId = "dashboard" | "umpiring" | "history" | "add" | "audit";
 
@@ -104,12 +107,14 @@ export function FinanceApp() {
     refreshFromServer,
     flushRemoteSave,
     postExpense,
+    postUmpiringAssignment,
     isViewer,
   } = useFinanceState();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewerSeasonId, setViewerSeasonId] = useState<string | null>(null);
   const [expenseBusy, setExpenseBusy] = useState(false);
+  const [umpiringBusy, setUmpiringBusy] = useState(false);
 
   const [showNewSeason, setShowNewSeason] = useState(false);
   const [newSeasonLabel, setNewSeasonLabel] = useState("");
@@ -231,6 +236,29 @@ export function FinanceApp() {
   }, [season]);
 
   const umpiringScheduleRows = useMemo(() => gardenState11UmpiringMatches(), []);
+
+  const onUmpiringAssign = useCallback(
+    async (matchKey: string, playerId: string) => {
+      if (!season) return;
+      const pid = playerId === "" ? null : playerId;
+      if (remoteMode) {
+        setUmpiringBusy(true);
+        try {
+          await postUmpiringAssignment(season.id, matchKey, pid);
+        } finally {
+          setUmpiringBusy(false);
+        }
+      } else {
+        update((app) => {
+          const next = { ...(app.umpiringAssignments ?? {}) };
+          if (!pid) delete next[matchKey];
+          else next[matchKey] = pid;
+          return { ...app, umpiringAssignments: next };
+        });
+      }
+    },
+    [season, remoteMode, postUmpiringAssignment, update],
+  );
 
   useEffect(() => {
     if (season) {
@@ -1558,42 +1586,94 @@ export function FinanceApp() {
               <section className="space-y-3">
                 <h2 className="text-lg font-semibold">Umpiring schedule</h2>
                 <p className="text-sm text-[var(--muted)]">
-                  Div-2 fixtures where Garden State 11 is the umpiring team
-                  (embedded league schedule).
+                  Div-2 fixtures where the league lists{" "}
+                  <strong className="text-[var(--foreground)]">
+                    Garden State 11
+                  </strong>{" "}
+                  or{" "}
+                  <strong className="text-[var(--foreground)]">
+                    Garden State Tigers
+                  </strong>{" "}
+                  as the umpiring side. Assign a roster player for each match
+                  (saved with your finance data).
                 </p>
+                {season.players.length === 0 ? (
+                  <p className="text-sm text-[var(--warn)]">
+                    Add players to this season (Dashboard or Audit) to assign
+                    umpires.
+                  </p>
+                ) : null}
                 {umpiringScheduleRows.length === 0 ? (
                   <p className="text-sm text-[var(--muted)]">
-                    No Garden State 11 umpiring rows in the schedule.
+                    No club umpiring rows in the embedded schedule.
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                    <table className="w-full min-w-[640px] text-left text-xs sm:text-sm">
+                    <table className="w-full min-w-[56rem] text-left text-xs sm:text-sm">
                       <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                         <tr>
                           <th className="px-3 py-2">Week</th>
                           <th className="px-3 py-2">Date</th>
                           <th className="px-3 py-2">Match</th>
                           <th className="px-3 py-2">Home team</th>
+                          <th className="px-3 py-2">League umpiring</th>
+                          <th className="px-3 py-2 min-w-[10rem]">Assign to</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {umpiringScheduleRows.map((r) => (
-                          <tr
-                            key={`${r.week}|${r.date}|${r.div2a}|${r.div2d}|${r.homeTeam}`}
-                            className="border-b border-[var(--border)]/60"
-                          >
-                            <td className="px-3 py-2 tabular-nums text-[var(--muted)]">
-                              {r.week}
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap text-[var(--muted)]">
-                              {r.date}
-                            </td>
-                            <td className="px-3 py-2 font-medium">
-                              {r.div2a} vs {r.div2d}
-                            </td>
-                            <td className="px-3 py-2">{r.homeTeam}</td>
-                          </tr>
-                        ))}
+                        {umpiringScheduleRows.map((r) => {
+                          const mk = div2MatchKey(r);
+                          const assigned =
+                            state.umpiringAssignments?.[mk] ?? "";
+                          const ghost =
+                            assigned !== "" &&
+                            !season.players.some((p) => p.id === assigned);
+                          return (
+                            <tr
+                              key={mk}
+                              className="border-b border-[var(--border)]/60"
+                            >
+                              <td className="px-3 py-2 tabular-nums text-[var(--muted)]">
+                                {r.week}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap text-[var(--muted)]">
+                                {r.date}
+                              </td>
+                              <td className="px-3 py-2 font-medium">
+                                {r.div2a} vs {r.div2d}
+                              </td>
+                              <td className="px-3 py-2">{r.homeTeam}</td>
+                              <td className="px-3 py-2 text-[var(--muted)]">
+                                {r.umpiringTeam}
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  className="min-h-9 w-full max-w-[14rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs sm:text-sm"
+                                  disabled={
+                                    umpiringBusy || season.players.length === 0
+                                  }
+                                  value={assigned}
+                                  onChange={(e) =>
+                                    void onUmpiringAssign(mk, e.target.value)
+                                  }
+                                  aria-label={`Assign umpire for week ${r.week} ${r.date}`}
+                                >
+                                  <option value="">— Unassigned —</option>
+                                  {ghost ? (
+                                    <option value={assigned}>
+                                      (removed from roster)
+                                    </option>
+                                  ) : null}
+                                  {season.players.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

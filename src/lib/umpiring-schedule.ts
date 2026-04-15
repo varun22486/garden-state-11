@@ -1,6 +1,7 @@
 /**
  * Div-2 schedule rows (TSV: Week, Date, Div-2-A, Div-2-D, Home Team, Umpiring).
- * Source: league fixture list. Rows where umpiringTeam === "Garden State 11" are shown in Umpiring tab.
+ * Umpiring tab lists rows where the designated umpiring side is Garden State 11 or
+ * Garden State Tigers (same club / shared division umpiring in the source sheet).
  */
 
 export type Div2ScheduleRow = {
@@ -25,6 +26,18 @@ function parseLine(line: string): Div2ScheduleRow | null {
     homeTeam: p[4]!,
     umpiringTeam: p[5]!,
   };
+}
+
+/** Stable key for a schedule row (assignments, API validation). */
+export function div2MatchKey(r: Div2ScheduleRow): string {
+  return [
+    r.week,
+    r.date,
+    r.div2a,
+    r.div2d,
+    r.homeTeam,
+    r.umpiringTeam,
+  ].join("|");
 }
 
 const RAW_TSV = `Week	Date	Div-2-A	Div-2-D	Home Team	Umpiring
@@ -440,8 +453,15 @@ export const DIV2_FULL_SCHEDULE: Div2ScheduleRow[] = _lines
   .map((line) => parseLine(line))
   .filter((r): r is Div2ScheduleRow => r != null);
 
-const GS11 = "Garden State 11";
+const CLUB_UMPIRING_TEAMS = new Set(["Garden State 11", "Garden State Tigers"]);
 
 export function gardenState11UmpiringMatches(): Div2ScheduleRow[] {
-  return DIV2_FULL_SCHEDULE.filter((r) => r.umpiringTeam === GS11);
+  return DIV2_FULL_SCHEDULE.filter((r) =>
+    CLUB_UMPIRING_TEAMS.has(r.umpiringTeam),
+  );
+}
+
+/** Match keys allowed for umpiring assignment writes (server + client). */
+export function clubUmpiringMatchKeySet(): Set<string> {
+  return new Set(gardenState11UmpiringMatches().map(div2MatchKey));
 }

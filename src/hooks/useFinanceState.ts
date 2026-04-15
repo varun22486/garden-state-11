@@ -142,6 +142,51 @@ export function useFinanceState() {
     [refreshFromServer],
   );
 
+  /** Admin and viewer: set or clear one umpiring assignment with revision check. */
+  const postUmpiringAssignment = useCallback(
+    async (
+      seasonId: string,
+      matchKey: string,
+      playerId: string | null,
+    ): Promise<boolean> => {
+      if (!FINANCE_REMOTE) return false;
+      setRemoteError(null);
+      const res = await fetch("/api/finance/umpiring-assignment", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seasonId,
+          matchKey,
+          playerId,
+          revision: revisionRef.current,
+        }),
+      });
+      if (res.status === 409) {
+        const d = (await res.json()) as {
+          state?: unknown;
+          revision?: number;
+        };
+        if (d.state != null && typeof d.revision === "number") {
+          setState(normalizeAppState(d.state));
+          revisionRef.current = d.revision;
+          setConflictNotice(true);
+        }
+        return false;
+      }
+      if (!res.ok) {
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        setRemoteError(d.error ?? "Could not save umpiring assignment.");
+        return false;
+      }
+      const d = (await res.json()) as { revision?: number };
+      if (typeof d.revision === "number") revisionRef.current = d.revision;
+      await refreshFromServer();
+      return true;
+    },
+    [refreshFromServer],
+  );
+
   /** Call after import/replace so the server gets the new blob without waiting for debounce. */
   const flushRemoteSave = useCallback(async () => {
     if (!FINANCE_REMOTE || authRequired) return;
@@ -232,5 +277,6 @@ export function useFinanceState() {
     refreshFromServer,
     flushRemoteSave,
     postExpense,
+    postUmpiringAssignment,
   };
 }

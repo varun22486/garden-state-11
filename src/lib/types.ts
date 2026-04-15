@@ -55,6 +55,10 @@ export type AppState = {
    * Subscribe to the same topic in the ntfy app. Falls back to EXPENSE_NTFY_TOPIC env.
    */
   expenseNtfyTopic?: string;
+  /**
+   * Umpiring tab: match key (see `div2MatchKey` in umpiring-schedule) → player id for that fixture.
+   */
+  umpiringAssignments?: Record<string, string>;
 };
 
 /** Seeded for new installs and when `expenseCategories` is missing in storage. */

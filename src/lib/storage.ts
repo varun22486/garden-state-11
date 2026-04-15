@@ -53,12 +53,33 @@ export function normalizeAppState(raw: unknown): AppState {
     }
   }
 
+  let umpiringAssignments: Record<string, string> | undefined;
+  if (
+    r.umpiringAssignments &&
+    typeof r.umpiringAssignments === "object" &&
+    !Array.isArray(r.umpiringAssignments)
+  ) {
+    const m: Record<string, string> = {};
+    for (const [k, v] of Object.entries(r.umpiringAssignments)) {
+      if (
+        typeof k === "string" &&
+        k.length > 0 &&
+        typeof v === "string" &&
+        v.length > 0
+      ) {
+        m[k] = v;
+      }
+    }
+    umpiringAssignments = Object.keys(m).length > 0 ? m : undefined;
+  }
+
   return {
     version: 1,
     seasons,
     currentSeasonId,
     expenseCategories,
     expenseNtfyTopic,
+    umpiringAssignments,
   };
 }
 
@@ -67,6 +88,7 @@ export const defaultAppState = (): AppState => ({
   seasons: [],
   currentSeasonId: null,
   expenseCategories: DEFAULT_EXPENSE_CATEGORIES.map((c) => ({ ...c })),
+  umpiringAssignments: {},
 });
 
 export function loadState(): AppState {
