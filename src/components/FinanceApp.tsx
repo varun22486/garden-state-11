@@ -1587,15 +1587,11 @@ export function FinanceApp() {
               <section className="space-y-3">
                 <h2 className="text-lg font-semibold">Umpiring schedule</h2>
                 <p className="text-sm text-[var(--muted)]">
-                  Div-2 fixtures where the league lists{" "}
+                  Official{" "}
                   <strong className="text-[var(--foreground)]">
                     Garden State 11
                   </strong>{" "}
-                  or{" "}
-                  <strong className="text-[var(--foreground)]">
-                    Garden State Tigers
-                  </strong>{" "}
-                  as the umpiring side. Assign a roster player for each match
+                  Sunday umpiring fixtures. Assign a roster player for each match
                   (saved with your finance data). Home ground name and address
                   come from the league team list (
                   <a

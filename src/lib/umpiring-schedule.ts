@@ -1,7 +1,7 @@
 /**
  * Div-2 schedule rows (TSV: Week, Date, Div-2-A, Div-2-D, Home Team, Umpiring).
- * Umpiring tab lists rows where the designated umpiring side is Garden State 11 or
- * Garden State Tigers (same club / shared division umpiring in the source sheet).
+ * The Umpiring tab uses `GARDEN_STATE_11_UMPIRING_FIXTURES` (official GS11 umpiring list),
+ * not a filter over the full embedded TSV.
  */
 
 export type Div2ScheduleRow = {
@@ -39,6 +39,93 @@ export function div2MatchKey(r: Div2ScheduleRow): string {
     r.umpiringTeam,
   ].join("|");
 }
+
+/**
+ * Garden State 11 Sunday umpiring assignments (team-provided / league list).
+ * Columns: week, date, Div-2-A, Div-2-D, home team, umpiring side (always GS11 here).
+ */
+export const GARDEN_STATE_11_UMPIRING_FIXTURES: Div2ScheduleRow[] = [
+  {
+    week: 1,
+    date: "Sunday, April 19, 2026",
+    div2a: "Straight Drive CC",
+    div2d: "Patriots CC",
+    homeTeam: "Patriots CC",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 3,
+    date: "Sunday, May 03, 2026",
+    div2a: "Bisons XI",
+    div2d: "NJ Yorkers",
+    homeTeam: "NJ Yorkers",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 5,
+    date: "Sunday, May 17, 2026",
+    div2a: "NJ Smashers",
+    div2d: "Gymkhana CC",
+    homeTeam: "Gymkhana CC",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 7,
+    date: "Sunday, June 07, 2026",
+    div2a: "CCE Warriors",
+    div2d: "Bengal Express",
+    homeTeam: "Bengal Express",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 9,
+    date: "Sunday, June 21, 2026",
+    div2a: "Garden State Tigers",
+    div2d: "Blue Leaf SC",
+    homeTeam: "Blue Leaf SC",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 12,
+    date: "Sunday, July 19, 2026",
+    div2a: "Straight Drive CC",
+    div2d: "Panthers",
+    homeTeam: "Panthers",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 14,
+    date: "Sunday, August 02, 2026",
+    div2a: "Bisons XI",
+    div2d: "Newport Nukes",
+    homeTeam: "Newport Nukes",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 16,
+    date: "Sunday, August 16, 2026",
+    div2a: "NJ Smashers",
+    div2d: "Jersey Stallions",
+    homeTeam: "Jersey Stallions",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 18,
+    date: "Sunday, August 30, 2026",
+    div2a: "CCE Warriors",
+    div2d: "Kallol Of NJ",
+    homeTeam: "Kallol Of NJ",
+    umpiringTeam: "Garden State 11",
+  },
+  {
+    week: 20,
+    date: "Sunday, September 20, 2026",
+    div2a: "Garden State Tigers",
+    div2d: "Namo XI",
+    homeTeam: "Namo XI",
+    umpiringTeam: "Garden State 11",
+  },
+];
 
 const RAW_TSV = `Week	Date	Div-2-A	Div-2-D	Home Team	Umpiring
 1	Saturday, April 18, 2026	Lion King	Parsippany Sports Cricket XI	Lion King	Jersey Knights CC
@@ -453,12 +540,8 @@ export const DIV2_FULL_SCHEDULE: Div2ScheduleRow[] = _lines
   .map((line) => parseLine(line))
   .filter((r): r is Div2ScheduleRow => r != null);
 
-const CLUB_UMPIRING_TEAMS = new Set(["Garden State 11", "Garden State Tigers"]);
-
 export function gardenState11UmpiringMatches(): Div2ScheduleRow[] {
-  return DIV2_FULL_SCHEDULE.filter((r) =>
-    CLUB_UMPIRING_TEAMS.has(r.umpiringTeam),
-  );
+  return GARDEN_STATE_11_UMPIRING_FIXTURES;
 }
 
 /** Match keys allowed for umpiring assignment writes (server + client). */
