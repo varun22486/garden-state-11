@@ -1621,7 +1621,7 @@ export function FinanceApp() {
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                    <table className="w-full min-w-[72rem] text-left text-xs sm:text-sm">
+                    <table className="w-full min-w-[64rem] text-left text-xs sm:text-sm">
                       <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                         <tr>
                           <th className="px-3 py-2">Week</th>
@@ -1630,7 +1630,6 @@ export function FinanceApp() {
                           <th className="px-3 py-2">Home team</th>
                           <th className="px-3 py-2 min-w-[9rem]">Home ground</th>
                           <th className="px-3 py-2 min-w-[11rem]">Address</th>
-                          <th className="px-3 py-2">League umpiring</th>
                           <th className="px-3 py-2 min-w-[10rem]">Assign to</th>
                         </tr>
                       </thead>
@@ -1694,9 +1693,6 @@ export function FinanceApp() {
                                 ) : (
                                   "—"
                                 )}
-                              </td>
-                              <td className="px-3 py-2 text-[var(--muted)]">
-                                {r.umpiringTeam}
                               </td>
                               <td className="px-3 py-2">
                                 <select
