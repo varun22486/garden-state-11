@@ -147,6 +147,7 @@ export function useFinanceState() {
     async (
       seasonId: string,
       matchKey: string,
+      slot: 1 | 2,
       playerId: string | null,
     ): Promise<boolean> => {
       if (!FINANCE_REMOTE) return false;
@@ -158,6 +159,7 @@ export function useFinanceState() {
         body: JSON.stringify({
           seasonId,
           matchKey,
+          slot,
           playerId,
           revision: revisionRef.current,
         }),

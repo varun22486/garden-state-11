@@ -1,4 +1,10 @@
-import type { AppState, ExpenseCategoryDef, Player, Season } from "./types";
+import type {
+  AppState,
+  ExpenseCategoryDef,
+  Player,
+  Season,
+  UmpiringSlotAssignment,
+} from "./types";
 import { DEFAULT_EXPENSE_CATEGORIES } from "./types";
 
 function normalizePlayer(p: Player): Player {
@@ -53,21 +59,35 @@ export function normalizeAppState(raw: unknown): AppState {
     }
   }
 
-  let umpiringAssignments: Record<string, string> | undefined;
+  let umpiringAssignments: Record<string, UmpiringSlotAssignment> | undefined;
   if (
     r.umpiringAssignments &&
     typeof r.umpiringAssignments === "object" &&
     !Array.isArray(r.umpiringAssignments)
   ) {
-    const m: Record<string, string> = {};
+    const m: Record<string, UmpiringSlotAssignment> = {};
     for (const [k, v] of Object.entries(r.umpiringAssignments)) {
-      if (
-        typeof k === "string" &&
-        k.length > 0 &&
-        typeof v === "string" &&
-        v.length > 0
-      ) {
-        m[k] = v;
+      if (typeof k !== "string" || k.length === 0) continue;
+      if (typeof v === "string" && v.length > 0) {
+        m[k] = { umpire1: v };
+        continue;
+      }
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const o = v as Record<string, unknown>;
+        const u1 =
+          typeof o.umpire1 === "string" && o.umpire1.length > 0
+            ? o.umpire1
+            : undefined;
+        const u2 =
+          typeof o.umpire2 === "string" && o.umpire2.length > 0
+            ? o.umpire2
+            : undefined;
+        if (u1 || u2) {
+          const row: UmpiringSlotAssignment = {};
+          if (u1) row.umpire1 = u1;
+          if (u2) row.umpire2 = u2;
+          m[k] = row;
+        }
       }
     }
     umpiringAssignments = Object.keys(m).length > 0 ? m : undefined;

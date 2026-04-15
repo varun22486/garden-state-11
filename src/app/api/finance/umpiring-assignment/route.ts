@@ -5,7 +5,11 @@ import {
 import { clubUmpiringMatchKeySet } from "@/lib/umpiring-schedule";
 import { defaultAppState, normalizeAppState } from "@/lib/storage";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { AppState } from "@/lib/types";
+import {
+  getUmpiringSlots,
+  type AppState,
+  type UmpiringSlotAssignment,
+} from "@/lib/types";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -28,6 +32,7 @@ function mergeUmpiringAssignment(
   state: AppState,
   seasonId: string,
   matchKey: string,
+  slot: 1 | 2,
   playerId: string | null,
 ): AppState | null {
   const season = state.seasons.find((s) => s.id === seasonId);
@@ -40,15 +45,32 @@ function mergeUmpiringAssignment(
   ) {
     return null;
   }
-  const next = { ...(state.umpiringAssignments ?? {}) };
-  if (!playerId) {
-    delete next[matchKey];
+  const base = { ...(state.umpiringAssignments ?? {}) };
+  const cur = getUmpiringSlots(base, matchKey);
+  const next1 =
+    slot === 1
+      ? playerId && playerId.length > 0
+        ? playerId
+        : ""
+      : cur.umpire1;
+  const next2 =
+    slot === 2
+      ? playerId && playerId.length > 0
+        ? playerId
+        : ""
+      : cur.umpire2;
+  const entry: UmpiringSlotAssignment = {};
+  if (next1) entry.umpire1 = next1;
+  if (next2) entry.umpire2 = next2;
+  const nextMap = { ...base };
+  if (!entry.umpire1 && !entry.umpire2) {
+    delete nextMap[matchKey];
   } else {
-    next[matchKey] = playerId;
+    nextMap[matchKey] = entry;
   }
   return {
     ...state,
-    umpiringAssignments: next,
+    umpiringAssignments: nextMap,
   };
 }
 
@@ -69,6 +91,7 @@ export async function POST(req: Request) {
   let body: {
     seasonId?: string;
     matchKey?: string;
+    slot?: number;
     playerId?: string | null;
     revision?: number;
   };
@@ -97,7 +120,8 @@ export async function POST(req: Request) {
       ? body.revision
       : -1;
 
-  if (!seasonId || !matchKey) {
+  const slot = body.slot === 1 || body.slot === 2 ? body.slot : null;
+  if (!seasonId || !matchKey || slot == null) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
@@ -123,7 +147,13 @@ export async function POST(req: Request) {
         );
       }
       const base = defaultAppState();
-      const merged = mergeUmpiringAssignment(base, seasonId, matchKey, playerId);
+      const merged = mergeUmpiringAssignment(
+        base,
+        seasonId,
+        matchKey,
+        slot,
+        playerId,
+      );
       if (!merged) {
         return NextResponse.json({ error: "Season or match not found" }, { status: 400 });
       }
@@ -153,7 +183,7 @@ export async function POST(req: Request) {
     }
 
     const st = normalizeAppState(existing.payload);
-    const merged = mergeUmpiringAssignment(st, seasonId, matchKey, playerId);
+    const merged = mergeUmpiringAssignment(st, seasonId, matchKey, slot, playerId);
     if (!merged) {
       return NextResponse.json({ error: "Season or match not found" }, { status: 400 });
     }

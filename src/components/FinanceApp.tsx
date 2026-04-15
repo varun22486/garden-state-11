@@ -29,7 +29,9 @@ import type { Expense, Player, Season } from "@/lib/types";
 import {
   DEFAULT_EXPENSE_CATEGORIES,
   expenseCategoryLabel,
+  getUmpiringSlots,
   isExpenseCategoryInUse,
+  type UmpiringSlotAssignment,
 } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TeamLogin } from "@/components/TeamLogin";
@@ -52,6 +54,59 @@ const MAIN_TABS: { id: MainTabId; label: string }[] = [
   { id: "add", label: "Add Expenses" },
   { id: "audit", label: "Audit" },
 ];
+
+const UMPIRE_SELECT_CLASS =
+  "min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm touch-manipulation";
+
+function UmpireField({
+  label,
+  value,
+  ghost,
+  disabled,
+  players,
+  onChange,
+  ariaLabel,
+  compact,
+}: {
+  label: string;
+  value: string;
+  ghost: boolean;
+  disabled: boolean;
+  players: Player[];
+  onChange: (v: string) => void;
+  ariaLabel: string;
+  /** Table cells: no label stack */
+  compact?: boolean;
+}) {
+  const select = (
+    <select
+      className={UMPIRE_SELECT_CLASS}
+      disabled={disabled}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={ariaLabel}
+    >
+      <option value="">— Unassigned —</option>
+      {ghost ? (
+        <option value={value}>(removed from roster)</option>
+      ) : null}
+      {players.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+    </select>
+  );
+  if (compact) return select;
+  return (
+    <label className="flex min-w-0 flex-col gap-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+        {label}
+      </span>
+      {select}
+    </label>
+  );
+}
 
 function Card({
   title,
@@ -243,22 +298,31 @@ export function FinanceApp() {
   const umpiringScheduleRows = useMemo(() => gardenState11UmpiringMatches(), []);
 
   const onUmpiringAssign = useCallback(
-    async (matchKey: string, playerId: string) => {
+    async (matchKey: string, slot: 1 | 2, playerId: string) => {
       if (!season) return;
       const pid = playerId === "" ? null : playerId;
       if (remoteMode) {
         setUmpiringBusy(true);
         try {
-          await postUmpiringAssignment(season.id, matchKey, pid);
+          await postUmpiringAssignment(season.id, matchKey, slot, pid);
         } finally {
           setUmpiringBusy(false);
         }
       } else {
         update((app) => {
-          const next = { ...(app.umpiringAssignments ?? {}) };
-          if (!pid) delete next[matchKey];
-          else next[matchKey] = pid;
-          return { ...app, umpiringAssignments: next };
+          const base = { ...(app.umpiringAssignments ?? {}) };
+          const cur = getUmpiringSlots(base, matchKey);
+          const next1 =
+            slot === 1 ? (pid && pid.length > 0 ? pid : "") : cur.umpire1;
+          const next2 =
+            slot === 2 ? (pid && pid.length > 0 ? pid : "") : cur.umpire2;
+          const entry: UmpiringSlotAssignment = {};
+          if (next1) entry.umpire1 = next1;
+          if (next2) entry.umpire2 = next2;
+          const nextMap = { ...base };
+          if (!entry.umpire1 && !entry.umpire2) delete nextMap[matchKey];
+          else nextMap[matchKey] = entry;
+          return { ...app, umpiringAssignments: nextMap };
         });
       }
     },
@@ -1595,8 +1659,9 @@ export function FinanceApp() {
                   <strong className="text-[var(--foreground)]">
                     Garden State 11
                   </strong>{" "}
-                  Sunday umpiring fixtures. Assign a roster player for each match
-                  (saved with your finance data). Town and teams-sharing-ground
+                  Sunday umpiring fixtures. Assign{" "}
+                  <strong className="text-[var(--foreground)]">two umpires</strong>{" "}
+                  per match (saved with your finance data). Town and teams-sharing-ground
                   come from the{" "}
                   <strong className="text-[var(--foreground)]">Grounds</strong>{" "}
                   sheet in the 2026 workbook (see Grounds tab); run{" "}
@@ -1614,88 +1679,178 @@ export function FinanceApp() {
                     No club umpiring rows in the embedded schedule.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                    <table className="w-full min-w-[56rem] text-left text-xs sm:text-sm">
-                      <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
-                        <tr>
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2">Match</th>
-                          <th className="px-3 py-2">Home team</th>
-                          <th className="px-3 py-2 min-w-[18rem]">
-                            Ground{" "}
-                            <span className="font-normal normal-case text-[var(--muted)]">
-                              (2026 schedule workbook)
-                            </span>
-                          </th>
-                          <th className="px-3 py-2 min-w-[10rem]">Assign to</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {umpiringScheduleRows.map((r) => {
-                          const mk = div2MatchKey(r);
-                          const assigned =
-                            state.umpiringAssignments?.[mk] ?? "";
-                          const ghost =
-                            assigned !== "" &&
-                            !season.players.some((p) => p.id === assigned);
-                          const ground = getNjsbclGroundForTeam(r.homeTeam);
-                          return (
-                            <tr
-                              key={mk}
-                              className="border-b border-[var(--border)]/60"
-                            >
-                              <td className="px-3 py-2 whitespace-nowrap text-[var(--muted)]">
-                                {r.date}
-                              </td>
-                              <td className="px-3 py-2 font-medium">
-                                {r.div2a} vs {r.div2d}
-                              </td>
-                              <td className="px-3 py-2">{r.homeTeam}</td>
-                              <td className="max-w-[28rem] px-3 py-2 align-top">
-                                {ground ? (
-                                  <div className="space-y-1.5">
-                                    <p className="font-semibold text-[var(--foreground)]">
-                                      {ground.town}
-                                    </p>
-                                    <p className="text-xs leading-snug text-[var(--muted)] sm:text-sm">
-                                      {ground.teamsSharing}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <span className="text-[var(--muted)]">—</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2">
-                                <select
-                                  className="min-h-9 w-full max-w-[14rem] rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs sm:text-sm"
-                                  disabled={
-                                    umpiringBusy || season.players.length === 0
-                                  }
-                                  value={assigned}
-                                  onChange={(e) =>
-                                    void onUmpiringAssign(mk, e.target.value)
-                                  }
-                                  aria-label={`Assign umpire for week ${r.week} ${r.date}`}
-                                >
-                                  <option value="">— Unassigned —</option>
-                                  {ghost ? (
-                                    <option value={assigned}>
-                                      (removed from roster)
-                                    </option>
-                                  ) : null}
-                                  {season.players.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
+                  <>
+                    <div className="space-y-3 md:hidden">
+                      {umpiringScheduleRows.map((r) => {
+                        const mk = div2MatchKey(r);
+                        const { umpire1, umpire2 } = getUmpiringSlots(
+                          state.umpiringAssignments,
+                          mk,
+                        );
+                        const ghost1 =
+                          umpire1 !== "" &&
+                          !season.players.some((p) => p.id === umpire1);
+                        const ghost2 =
+                          umpire2 !== "" &&
+                          !season.players.some((p) => p.id === umpire2);
+                        const ground = getNjsbclGroundForTeam(r.homeTeam);
+                        const busy =
+                          umpiringBusy || season.players.length === 0;
+                        return (
+                          <div
+                            key={mk}
+                            className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_4px_24px_-8px_rgba(0,0,0,0.4)]"
+                          >
+                            <p className="text-xs text-[var(--muted)]">
+                              {r.date}
+                            </p>
+                            <p className="mt-1 font-semibold leading-snug text-[var(--foreground)]">
+                              {r.div2a} vs {r.div2d}
+                            </p>
+                            <p className="mt-1 text-sm text-[var(--muted)]">
+                              Home: {r.homeTeam}
+                            </p>
+                            {ground ? (
+                              <div className="mt-3 border-t border-[var(--border)]/60 pt-3 text-sm">
+                                <p className="font-semibold text-[var(--foreground)]">
+                                  {ground.town}
+                                </p>
+                                <p className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
+                                  {ground.teamsSharing}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-sm text-[var(--muted)]">
+                                —
+                              </p>
+                            )}
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <UmpireField
+                                label="Umpire 1"
+                                value={umpire1}
+                                ghost={ghost1}
+                                disabled={busy}
+                                players={season.players}
+                                onChange={(v) => void onUmpiringAssign(mk, 1, v)}
+                                aria-label={`Umpire 1 for ${r.date} ${r.div2a} vs ${r.div2d}`}
+                              />
+                              <UmpireField
+                                label="Umpire 2"
+                                value={umpire2}
+                                ghost={ghost2}
+                                disabled={busy}
+                                players={season.players}
+                                onChange={(v) => void onUmpiringAssign(mk, 2, v)}
+                                aria-label={`Umpire 2 for ${r.date} ${r.div2a} vs ${r.div2d}`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="hidden md:block">
+                      <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+                        <table className="w-full min-w-[64rem] text-left text-xs lg:min-w-[72rem] lg:text-sm">
+                          <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
+                            <tr>
+                              <th className="px-3 py-2">Date</th>
+                              <th className="px-3 py-2">Match</th>
+                              <th className="px-3 py-2">Home team</th>
+                              <th className="px-3 py-2 lg:min-w-[16rem]">
+                                Ground{" "}
+                                <span className="font-normal normal-case text-[var(--muted)]">
+                                  (2026 workbook)
+                                </span>
+                              </th>
+                              <th className="px-3 py-2 lg:min-w-[9rem]">
+                                Umpire 1
+                              </th>
+                              <th className="px-3 py-2 lg:min-w-[9rem]">
+                                Umpire 2
+                              </th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody>
+                            {umpiringScheduleRows.map((r) => {
+                              const mk = div2MatchKey(r);
+                              const { umpire1, umpire2 } = getUmpiringSlots(
+                                state.umpiringAssignments,
+                                mk,
+                              );
+                              const ghost1 =
+                                umpire1 !== "" &&
+                                !season.players.some((p) => p.id === umpire1);
+                              const ghost2 =
+                                umpire2 !== "" &&
+                                !season.players.some((p) => p.id === umpire2);
+                              const ground = getNjsbclGroundForTeam(r.homeTeam);
+                              const busy =
+                                umpiringBusy || season.players.length === 0;
+                              return (
+                                <tr
+                                  key={mk}
+                                  className="border-b border-[var(--border)]/60"
+                                >
+                                  <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
+                                    {r.date}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium">
+                                    {r.div2a} vs {r.div2d}
+                                  </td>
+                                  <td className="px-3 py-2">{r.homeTeam}</td>
+                                  <td className="max-w-[24rem] px-3 py-2 align-top lg:max-w-[28rem]">
+                                    {ground ? (
+                                      <div className="space-y-1.5">
+                                        <p className="font-semibold text-[var(--foreground)]">
+                                          {ground.town}
+                                        </p>
+                                        <p className="text-xs leading-snug text-[var(--muted)]">
+                                          {ground.teamsSharing}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[var(--muted)]">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="min-w-[8.5rem] px-2 py-2 align-top">
+                                    <UmpireField
+                                      label=""
+                                      compact
+                                      value={umpire1}
+                                      ghost={ghost1}
+                                      disabled={busy}
+                                      players={season.players}
+                                      onChange={(v) =>
+                                        void onUmpiringAssign(mk, 1, v)
+                                      }
+                                      aria-label={`Umpire 1 for ${r.date}`}
+                                    />
+                                  </td>
+                                  <td className="min-w-[8.5rem] px-2 py-2 align-top">
+                                    <UmpireField
+                                      label=""
+                                      compact
+                                      value={umpire2}
+                                      ghost={ghost2}
+                                      disabled={busy}
+                                      players={season.players}
+                                      onChange={(v) =>
+                                        void onUmpiringAssign(mk, 2, v)
+                                      }
+                                      aria-label={`Umpire 2 for ${r.date}`}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
                 )}
               </section>
             ) : null}

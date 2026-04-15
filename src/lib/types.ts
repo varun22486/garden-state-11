@@ -56,10 +56,27 @@ export type AppState = {
    */
   expenseNtfyTopic?: string;
   /**
-   * Umpiring tab: match key (see `div2MatchKey` in umpiring-schedule) → player id for that fixture.
+   * Umpiring tab: match key → two optional roster assignments per fixture.
+   * Legacy payloads used a single string per key (treated as umpire1).
    */
-  umpiringAssignments?: Record<string, string>;
+  umpiringAssignments?: Record<string, UmpiringSlotAssignment>;
 };
+
+export type UmpiringSlotAssignment = {
+  umpire1?: string;
+  umpire2?: string;
+};
+
+export function getUmpiringSlots(
+  assignments: Record<string, UmpiringSlotAssignment> | undefined,
+  matchKey: string,
+): { umpire1: string; umpire2: string } {
+  const v = assignments?.[matchKey];
+  return {
+    umpire1: v?.umpire1 ?? "",
+    umpire2: v?.umpire2 ?? "",
+  };
+}
 
 /** Seeded for new installs and when `expenseCategories` is missing in storage. */
 export const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategoryDef[] = [
