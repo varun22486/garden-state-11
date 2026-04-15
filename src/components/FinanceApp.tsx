@@ -931,7 +931,7 @@ export function FinanceApp() {
   }
 
   return (
-    <div className="space-y-6 sm:space-y-10">
+    <div className="min-w-0 space-y-6 sm:space-y-10">
       <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-6 sm:flex-row sm:items-start sm:justify-between sm:pb-8">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
@@ -1190,8 +1190,25 @@ export function FinanceApp() {
         <p className="text-[var(--muted)]">Select a season above.</p>
       ) : (
         <>
+          <div className="space-y-2 sm:hidden">
+            <label htmlFor="main-section" className="sr-only">
+              Main section
+            </label>
+            <select
+              id="main-section"
+              className="min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-sm font-semibold text-[var(--foreground)]"
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value as MainTabId)}
+            >
+              {mainTabs.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <nav
-            className="-mx-2 flex gap-1 overflow-x-auto overscroll-x-contain border-b border-[var(--border)] px-2 pb-px [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+            className="hidden gap-1 border-b border-[var(--border)] pb-px sm:flex"
             role="tablist"
             aria-label="Main sections"
           >
@@ -1884,7 +1901,7 @@ export function FinanceApp() {
 
             {activeTab === "add" ? (
               <section>
-                <div className="max-w-2xl space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+                <div className="max-w-2xl space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-6">
                   <h2 className="text-lg font-semibold">Add Expenses</h2>
                   <p className="text-sm text-[var(--muted)]">
                     Record who paid; they&apos;ll show as owed reimbursement from
@@ -2096,7 +2113,7 @@ export function FinanceApp() {
                     .
                   </p>
                   <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                    <label className="block min-w-[200px] flex-1 text-sm">
+                    <label className="block min-w-0 flex-1 text-sm sm:min-w-[200px]">
                       <span className="text-[var(--muted)]">ntfy topic</span>
                       <input
                         type="text"

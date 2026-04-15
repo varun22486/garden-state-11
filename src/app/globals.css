@@ -18,9 +18,14 @@
   --glow-accent: rgba(61, 154, 106, 0.12);
 }
 
+html {
+  overflow-x: clip;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
+  overflow-x: clip;
 }
 
 /* Comfortable form text on phones (reduces iOS input zoom). */
