@@ -4,6 +4,7 @@ import {
 } from "./njsbcl-grounds.generated";
 
 export type { NjsbclGroundRow };
+export { NJSBCL_GROUND_ROWS };
 
 export type NjsbclGroundMatch = NjsbclGroundRow;
 

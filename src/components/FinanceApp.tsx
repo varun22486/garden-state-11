@@ -1615,16 +1615,17 @@ export function FinanceApp() {
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                    <table className="w-full min-w-[64rem] text-left text-xs sm:text-sm">
+                    <table className="w-full min-w-[56rem] text-left text-xs sm:text-sm">
                       <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                         <tr>
-                          <th className="px-3 py-2">Week</th>
                           <th className="px-3 py-2">Date</th>
                           <th className="px-3 py-2">Match</th>
                           <th className="px-3 py-2">Home team</th>
-                          <th className="px-3 py-2 whitespace-nowrap">Town</th>
-                          <th className="px-3 py-2 min-w-[14rem]">
-                            Teams sharing ground
+                          <th className="px-3 py-2 min-w-[18rem]">
+                            Ground{" "}
+                            <span className="font-normal normal-case text-[var(--muted)]">
+                              (2026 schedule workbook)
+                            </span>
                           </th>
                           <th className="px-3 py-2 min-w-[10rem]">Assign to</th>
                         </tr>
@@ -1643,9 +1644,6 @@ export function FinanceApp() {
                               key={mk}
                               className="border-b border-[var(--border)]/60"
                             >
-                              <td className="px-3 py-2 tabular-nums text-[var(--muted)]">
-                                {r.week}
-                              </td>
                               <td className="px-3 py-2 whitespace-nowrap text-[var(--muted)]">
                                 {r.date}
                               </td>
@@ -1653,11 +1651,19 @@ export function FinanceApp() {
                                 {r.div2a} vs {r.div2d}
                               </td>
                               <td className="px-3 py-2">{r.homeTeam}</td>
-                              <td className="whitespace-nowrap px-3 py-2 align-top text-[var(--muted)]">
-                                {ground?.town ?? "—"}
-                              </td>
-                              <td className="max-w-[20rem] whitespace-normal px-3 py-2 align-top text-xs text-[var(--muted)] sm:text-sm">
-                                {ground?.teamsSharing ?? "—"}
+                              <td className="max-w-[28rem] px-3 py-2 align-top">
+                                {ground ? (
+                                  <div className="space-y-1.5">
+                                    <p className="font-semibold text-[var(--foreground)]">
+                                      {ground.town}
+                                    </p>
+                                    <p className="text-xs leading-snug text-[var(--muted)] sm:text-sm">
+                                      {ground.teamsSharing}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <span className="text-[var(--muted)]">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-2">
                                 <select
