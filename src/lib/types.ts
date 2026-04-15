@@ -67,15 +67,28 @@ export type UmpiringSlotAssignment = {
   umpire2?: string;
 };
 
+/**
+ * Reads umpire slots; tolerates legacy per-match string values in runtime JSON
+ * (older saves) even though the typed state uses objects only.
+ */
 export function getUmpiringSlots(
-  assignments: Record<string, UmpiringSlotAssignment> | undefined,
+  assignments: AppState["umpiringAssignments"],
   matchKey: string,
 ): { umpire1: string; umpire2: string } {
-  const v = assignments?.[matchKey];
-  return {
-    umpire1: v?.umpire1 ?? "",
-    umpire2: v?.umpire2 ?? "",
-  };
+  const v = assignments?.[matchKey] as
+    | UmpiringSlotAssignment
+    | string
+    | undefined;
+  if (typeof v === "string") {
+    return { umpire1: v, umpire2: "" };
+  }
+  if (v && typeof v === "object") {
+    return {
+      umpire1: v.umpire1 ?? "",
+      umpire2: v.umpire2 ?? "",
+    };
+  }
+  return { umpire1: "", umpire2: "" };
 }
 
 /** Seeded for new installs and when `expenseCategories` is missing in storage. */

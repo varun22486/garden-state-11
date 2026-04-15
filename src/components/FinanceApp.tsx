@@ -1679,59 +1679,64 @@ export function FinanceApp() {
                     No club umpiring rows in the embedded schedule.
                   </p>
                 ) : (
-                  <>
-                    <div className="space-y-3 md:hidden">
-                      {umpiringScheduleRows.map((r) => {
-                        const mk = div2MatchKey(r);
-                        const { umpire1, umpire2 } = getUmpiringSlots(
-                          state.umpiringAssignments,
-                          mk,
-                        );
-                        const ghost1 =
-                          umpire1 !== "" &&
-                          !season.players.some((p) => p.id === umpire1);
-                        const ghost2 =
-                          umpire2 !== "" &&
-                          !season.players.some((p) => p.id === umpire2);
-                        const ground = getNjsbclGroundForTeam(r.homeTeam);
-                        const busy =
-                          umpiringBusy || season.players.length === 0;
-                        return (
-                          <div
-                            key={mk}
-                            className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_4px_24px_-8px_rgba(0,0,0,0.4)]"
-                          >
-                            <p className="text-xs text-[var(--muted)]">
-                              {r.date}
-                            </p>
-                            <p className="mt-1 font-semibold leading-snug text-[var(--foreground)]">
-                              {r.div2a} vs {r.div2d}
-                            </p>
-                            <p className="mt-1 text-sm text-[var(--muted)]">
-                              Home: {r.homeTeam}
-                            </p>
-                            {ground ? (
-                              <div className="mt-3 border-t border-[var(--border)]/60 pt-3 text-sm">
-                                <p className="font-semibold text-[var(--foreground)]">
-                                  {ground.town}
-                                </p>
-                                <p className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
-                                  {ground.teamsSharing}
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="mt-3 text-sm text-[var(--muted)]">
-                                —
+                  <div className="space-y-3">
+                    {umpiringScheduleRows.map((r) => {
+                      const mk = div2MatchKey(r);
+                      const { umpire1, umpire2 } = getUmpiringSlots(
+                        state.umpiringAssignments,
+                        mk,
+                      );
+                      const ghost1 =
+                        umpire1 !== "" &&
+                        !season.players.some((p) => p.id === umpire1);
+                      const ghost2 =
+                        umpire2 !== "" &&
+                        !season.players.some((p) => p.id === umpire2);
+                      const ground = getNjsbclGroundForTeam(r.homeTeam);
+                      const busy =
+                        umpiringBusy || season.players.length === 0;
+                      return (
+                        <div
+                          key={mk}
+                          className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[0_4px_24px_-8px_rgba(0,0,0,0.4)]"
+                        >
+                          <p className="text-xs text-[var(--muted)]">
+                            {r.date}
+                          </p>
+                          <p className="mt-1 font-semibold leading-snug text-[var(--foreground)]">
+                            {r.div2a} vs {r.div2d}
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--muted)]">
+                            Home: {r.homeTeam}
+                          </p>
+                          {ground ? (
+                            <div className="mt-3 border-t border-[var(--border)]/60 pt-3 text-sm">
+                              <p className="font-semibold text-[var(--foreground)]">
+                                {ground.town}
                               </p>
-                            )}
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <p className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
+                                {ground.teamsSharing}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-sm text-[var(--muted)]">
+                              —
+                            </p>
+                          )}
+                          <div className="mt-4 border-t border-[var(--border)]/60 pt-4">
+                            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                              Umpires (assign both)
+                            </p>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                               <UmpireField
                                 label="Umpire 1"
                                 value={umpire1}
                                 ghost={ghost1}
                                 disabled={busy}
                                 players={season.players}
-                                onChange={(v) => void onUmpiringAssign(mk, 1, v)}
+                                onChange={(v) =>
+                                  void onUmpiringAssign(mk, 1, v)
+                                }
                                 aria-label={`Umpire 1 for ${r.date} ${r.div2a} vs ${r.div2d}`}
                               />
                               <UmpireField
@@ -1740,117 +1745,17 @@ export function FinanceApp() {
                                 ghost={ghost2}
                                 disabled={busy}
                                 players={season.players}
-                                onChange={(v) => void onUmpiringAssign(mk, 2, v)}
+                                onChange={(v) =>
+                                  void onUmpiringAssign(mk, 2, v)
+                                }
                                 aria-label={`Umpire 2 for ${r.date} ${r.div2a} vs ${r.div2d}`}
                               />
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="hidden md:block">
-                      <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                        <table className="w-full min-w-[64rem] text-left text-xs lg:min-w-[72rem] lg:text-sm">
-                          <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
-                            <tr>
-                              <th className="px-3 py-2">Date</th>
-                              <th className="px-3 py-2">Match</th>
-                              <th className="px-3 py-2">Home team</th>
-                              <th className="px-3 py-2 lg:min-w-[16rem]">
-                                Ground{" "}
-                                <span className="font-normal normal-case text-[var(--muted)]">
-                                  (2026 workbook)
-                                </span>
-                              </th>
-                              <th className="px-3 py-2 lg:min-w-[9rem]">
-                                Umpire 1
-                              </th>
-                              <th className="px-3 py-2 lg:min-w-[9rem]">
-                                Umpire 2
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {umpiringScheduleRows.map((r) => {
-                              const mk = div2MatchKey(r);
-                              const { umpire1, umpire2 } = getUmpiringSlots(
-                                state.umpiringAssignments,
-                                mk,
-                              );
-                              const ghost1 =
-                                umpire1 !== "" &&
-                                !season.players.some((p) => p.id === umpire1);
-                              const ghost2 =
-                                umpire2 !== "" &&
-                                !season.players.some((p) => p.id === umpire2);
-                              const ground = getNjsbclGroundForTeam(r.homeTeam);
-                              const busy =
-                                umpiringBusy || season.players.length === 0;
-                              return (
-                                <tr
-                                  key={mk}
-                                  className="border-b border-[var(--border)]/60"
-                                >
-                                  <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
-                                    {r.date}
-                                  </td>
-                                  <td className="px-3 py-2 font-medium">
-                                    {r.div2a} vs {r.div2d}
-                                  </td>
-                                  <td className="px-3 py-2">{r.homeTeam}</td>
-                                  <td className="max-w-[24rem] px-3 py-2 align-top lg:max-w-[28rem]">
-                                    {ground ? (
-                                      <div className="space-y-1.5">
-                                        <p className="font-semibold text-[var(--foreground)]">
-                                          {ground.town}
-                                        </p>
-                                        <p className="text-xs leading-snug text-[var(--muted)]">
-                                          {ground.teamsSharing}
-                                        </p>
-                                      </div>
-                                    ) : (
-                                      <span className="text-[var(--muted)]">
-                                        —
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="min-w-[8.5rem] px-2 py-2 align-top">
-                                    <UmpireField
-                                      label=""
-                                      compact
-                                      value={umpire1}
-                                      ghost={ghost1}
-                                      disabled={busy}
-                                      players={season.players}
-                                      onChange={(v) =>
-                                        void onUmpiringAssign(mk, 1, v)
-                                      }
-                                      aria-label={`Umpire 1 for ${r.date}`}
-                                    />
-                                  </td>
-                                  <td className="min-w-[8.5rem] px-2 py-2 align-top">
-                                    <UmpireField
-                                      label=""
-                                      compact
-                                      value={umpire2}
-                                      ghost={ghost2}
-                                      disabled={busy}
-                                      players={season.players}
-                                      onChange={(v) =>
-                                        void onUmpiringAssign(mk, 2, v)
-                                      }
-                                      aria-label={`Umpire 2 for ${r.date}`}
-                                    />
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </section>
             ) : null}
