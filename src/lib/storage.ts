@@ -66,7 +66,10 @@ export function normalizeAppState(raw: unknown): AppState {
     !Array.isArray(r.umpiringAssignments)
   ) {
     const m: Record<string, UmpiringSlotAssignment> = {};
-    for (const [k, v] of Object.entries(r.umpiringAssignments)) {
+    const rawEntries = Object.entries(
+      r.umpiringAssignments as Record<string, string | UmpiringSlotAssignment>,
+    );
+    for (const [k, v] of rawEntries) {
       if (typeof k !== "string" || k.length === 0) continue;
       if (typeof v === "string" && v.length > 0) {
         m[k] = { umpire1: v };
