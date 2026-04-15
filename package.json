@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "scrape:grounds": "python3 scripts/scrape_njsbcl_grounds.py"
+    "scrape:grounds": "python3 scripts/scrape_njsbcl_grounds.py",
+    "import:grounds": "python3 scripts/import_njsbcl_grounds_xlsx.py"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

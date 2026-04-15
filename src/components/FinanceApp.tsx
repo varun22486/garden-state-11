@@ -33,17 +33,21 @@ import {
 } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TeamLogin } from "@/components/TeamLogin";
-import { getHomeGroundForTeam } from "@/lib/team-home-grounds";
+import {
+  getNjsbclGroundForTeam,
+  NJSBCL_GROUND_ROWS,
+} from "@/lib/njsbcl-grounds";
 import {
   div2MatchKey,
   gardenState11UmpiringMatches,
 } from "@/lib/umpiring-schedule";
 
-type MainTabId = "dashboard" | "umpiring" | "history" | "add" | "audit";
+type MainTabId = "dashboard" | "umpiring" | "grounds" | "history" | "add" | "audit";
 
 const MAIN_TABS: { id: MainTabId; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "umpiring", label: "Umpiring" },
+  { id: "grounds", label: "Grounds" },
   { id: "history", label: "Expenses History" },
   { id: "add", label: "Add Expenses" },
   { id: "audit", label: "Audit" },
@@ -1592,18 +1596,12 @@ export function FinanceApp() {
                     Garden State 11
                   </strong>{" "}
                   Sunday umpiring fixtures. Assign a roster player for each match
-                  (saved with your finance data). Home ground name and address
-                  come from the league team list (
-                  <a
-                    href="https://www.njsbcl.com/NJSBCL/viewTeams.do?league=59&year=2026&clubId=2690"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--accent)] hover:underline"
-                  >
-                    NJSBCL
-                  </a>
-                  ); run <code className="text-[11px]">npm run scrape:grounds</code>{" "}
-                  to refresh.
+                  (saved with your finance data). Town and teams-sharing-ground
+                  come from the{" "}
+                  <strong className="text-[var(--foreground)]">Grounds</strong>{" "}
+                  sheet in the 2026 workbook (see Grounds tab); run{" "}
+                  <code className="text-[11px]">npm run import:grounds</code> after
+                  updating the spreadsheet.
                 </p>
                 {season.players.length === 0 ? (
                   <p className="text-sm text-[var(--warn)]">
@@ -1624,8 +1622,10 @@ export function FinanceApp() {
                           <th className="px-3 py-2">Date</th>
                           <th className="px-3 py-2">Match</th>
                           <th className="px-3 py-2">Home team</th>
-                          <th className="px-3 py-2 min-w-[9rem]">Home ground</th>
-                          <th className="px-3 py-2 min-w-[11rem]">Address</th>
+                          <th className="px-3 py-2 whitespace-nowrap">Town</th>
+                          <th className="px-3 py-2 min-w-[14rem]">
+                            Teams sharing ground
+                          </th>
                           <th className="px-3 py-2 min-w-[10rem]">Assign to</th>
                         </tr>
                       </thead>
@@ -1637,10 +1637,7 @@ export function FinanceApp() {
                           const ghost =
                             assigned !== "" &&
                             !season.players.some((p) => p.id === assigned);
-                          const venue = getHomeGroundForTeam(r.homeTeam);
-                          const mapsHref = venue?.address
-                            ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue.address)}`
-                            : null;
+                          const ground = getNjsbclGroundForTeam(r.homeTeam);
                           return (
                             <tr
                               key={mk}
@@ -1656,39 +1653,11 @@ export function FinanceApp() {
                                 {r.div2a} vs {r.div2d}
                               </td>
                               <td className="px-3 py-2">{r.homeTeam}</td>
-                              <td className="px-3 py-2 align-top">
-                                {venue && mapsHref ? (
-                                  <a
-                                    href={mapsHref}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[var(--accent)] hover:underline"
-                                  >
-                                    {venue.groundName}
-                                  </a>
-                                ) : venue ? (
-                                  <span>{venue.groundName}</span>
-                                ) : (
-                                  <span className="text-[var(--muted)]">—</span>
-                                )}
+                              <td className="whitespace-nowrap px-3 py-2 align-top text-[var(--muted)]">
+                                {ground?.town ?? "—"}
                               </td>
-                              <td className="max-w-[14rem] whitespace-normal px-3 py-2 align-top text-[var(--muted)]">
-                                {venue?.address ? (
-                                  mapsHref ? (
-                                    <a
-                                      href={mapsHref}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-[var(--accent)] hover:underline"
-                                    >
-                                      {venue.address}
-                                    </a>
-                                  ) : (
-                                    venue.address
-                                  )
-                                ) : (
-                                  "—"
-                                )}
+                              <td className="max-w-[20rem] whitespace-normal px-3 py-2 align-top text-xs text-[var(--muted)] sm:text-sm">
+                                {ground?.teamsSharing ?? "—"}
                               </td>
                               <td className="px-3 py-2">
                                 <select
@@ -1722,6 +1691,49 @@ export function FinanceApp() {
                     </table>
                   </div>
                 )}
+              </section>
+            ) : null}
+
+            {activeTab === "grounds" ? (
+              <section className="space-y-3">
+                <h2 className="text-lg font-semibold">Grounds</h2>
+                <p className="text-sm text-[var(--muted)]">
+                  Teams sharing each ground and town from the{" "}
+                  <em>Grounds</em> sheet in{" "}
+                  <strong className="text-[var(--foreground)]">
+                    2026 NJSBCL Final Schedule.xlsx
+                  </strong>
+                  . Regenerate{" "}
+                  <code className="text-[11px]">src/lib/njsbcl-grounds.generated.ts</code>{" "}
+                  with{" "}
+                  <code className="text-[11px]">npm run import:grounds</code>{" "}
+                  after spreadsheet updates.
+                </p>
+                <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+                  <table className="w-full min-w-[40rem] text-left text-xs sm:text-sm">
+                    <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
+                      <tr>
+                        <th className="px-3 py-2">Teams sharing ground</th>
+                        <th className="px-3 py-2 whitespace-nowrap">Town</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {NJSBCL_GROUND_ROWS.map((row, i) => (
+                        <tr
+                          key={`${i}-${row.town}`}
+                          className="border-b border-[var(--border)]/60"
+                        >
+                          <td className="max-w-[36rem] whitespace-normal px-3 py-2 text-[var(--foreground)]">
+                            {row.teamsSharing}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
+                            {row.town}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             ) : null}
 
