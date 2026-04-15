@@ -33,6 +33,7 @@ import {
 } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TeamLogin } from "@/components/TeamLogin";
+import { getHomeGroundForTeam } from "@/lib/team-home-grounds";
 import {
   div2MatchKey,
   gardenState11UmpiringMatches,
@@ -1595,7 +1596,18 @@ export function FinanceApp() {
                     Garden State Tigers
                   </strong>{" "}
                   as the umpiring side. Assign a roster player for each match
-                  (saved with your finance data).
+                  (saved with your finance data). Home ground name and address
+                  come from the league team list (
+                  <a
+                    href="https://www.njsbcl.com/NJSBCL/viewTeams.do?league=59&year=2026&clubId=2690"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--accent)] hover:underline"
+                  >
+                    NJSBCL
+                  </a>
+                  ); run <code className="text-[11px]">npm run scrape:grounds</code>{" "}
+                  to refresh.
                 </p>
                 {season.players.length === 0 ? (
                   <p className="text-sm text-[var(--warn)]">
@@ -1609,13 +1621,15 @@ export function FinanceApp() {
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                    <table className="w-full min-w-[56rem] text-left text-xs sm:text-sm">
+                    <table className="w-full min-w-[72rem] text-left text-xs sm:text-sm">
                       <thead className="border-b border-[var(--border)] bg-[var(--card)] text-xs uppercase text-[var(--muted)]">
                         <tr>
                           <th className="px-3 py-2">Week</th>
                           <th className="px-3 py-2">Date</th>
                           <th className="px-3 py-2">Match</th>
                           <th className="px-3 py-2">Home team</th>
+                          <th className="px-3 py-2 min-w-[9rem]">Home ground</th>
+                          <th className="px-3 py-2 min-w-[11rem]">Address</th>
                           <th className="px-3 py-2">League umpiring</th>
                           <th className="px-3 py-2 min-w-[10rem]">Assign to</th>
                         </tr>
@@ -1628,6 +1642,10 @@ export function FinanceApp() {
                           const ghost =
                             assigned !== "" &&
                             !season.players.some((p) => p.id === assigned);
+                          const venue = getHomeGroundForTeam(r.homeTeam);
+                          const mapsHref = venue?.address
+                            ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue.address)}`
+                            : null;
                           return (
                             <tr
                               key={mk}
@@ -1643,6 +1661,40 @@ export function FinanceApp() {
                                 {r.div2a} vs {r.div2d}
                               </td>
                               <td className="px-3 py-2">{r.homeTeam}</td>
+                              <td className="px-3 py-2 align-top">
+                                {venue && mapsHref ? (
+                                  <a
+                                    href={mapsHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[var(--accent)] hover:underline"
+                                  >
+                                    {venue.groundName}
+                                  </a>
+                                ) : venue ? (
+                                  <span>{venue.groundName}</span>
+                                ) : (
+                                  <span className="text-[var(--muted)]">—</span>
+                                )}
+                              </td>
+                              <td className="max-w-[14rem] whitespace-normal px-3 py-2 align-top text-[var(--muted)]">
+                                {venue?.address ? (
+                                  mapsHref ? (
+                                    <a
+                                      href={mapsHref}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[var(--accent)] hover:underline"
+                                    >
+                                      {venue.address}
+                                    </a>
+                                  ) : (
+                                    venue.address
+                                  )
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
                               <td className="px-3 py-2 text-[var(--muted)]">
                                 {r.umpiringTeam}
                               </td>
