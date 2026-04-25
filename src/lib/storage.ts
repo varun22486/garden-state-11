@@ -3,6 +3,7 @@ import type {
   ExpenseCategoryDef,
   Player,
   Season,
+  UmpiringMatchCompletion,
   UmpiringSlotAssignment,
 } from "./types";
 import { DEFAULT_EXPENSE_CATEGORIES } from "./types";
@@ -96,6 +97,36 @@ export function normalizeAppState(raw: unknown): AppState {
     umpiringAssignments = Object.keys(m).length > 0 ? m : undefined;
   }
 
+  let umpiringCompletions: Record<string, UmpiringMatchCompletion> | undefined;
+  if (
+    r.umpiringCompletions &&
+    typeof r.umpiringCompletions === "object" &&
+    !Array.isArray(r.umpiringCompletions)
+  ) {
+    const m: Record<string, UmpiringMatchCompletion> = {};
+    for (const [k, v] of Object.entries(
+      r.umpiringCompletions as Record<
+        string,
+        { completedAt?: unknown; expenseIds?: unknown }
+      >,
+    )) {
+      if (typeof k !== "string" || k.length === 0) continue;
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      const completedAt =
+        typeof v.completedAt === "string" && v.completedAt.length > 0
+          ? v.completedAt
+          : null;
+      if (!completedAt) continue;
+      const expenseIds = Array.isArray(v.expenseIds)
+        ? v.expenseIds.filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          )
+        : [];
+      m[k] = { completedAt, expenseIds };
+    }
+    umpiringCompletions = Object.keys(m).length > 0 ? m : undefined;
+  }
+
   return {
     version: 1,
     seasons,
@@ -103,6 +134,7 @@ export function normalizeAppState(raw: unknown): AppState {
     expenseCategories,
     expenseNtfyTopic,
     umpiringAssignments,
+    umpiringCompletions,
   };
 }
 
@@ -112,6 +144,7 @@ export const defaultAppState = (): AppState => ({
   currentSeasonId: null,
   expenseCategories: DEFAULT_EXPENSE_CATEGORIES.map((c) => ({ ...c })),
   umpiringAssignments: {},
+  umpiringCompletions: {},
 });
 
 export function loadState(): AppState {

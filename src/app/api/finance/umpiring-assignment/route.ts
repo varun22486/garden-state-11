@@ -59,6 +59,18 @@ function mergeUmpiringAssignment(
         ? playerId
         : ""
       : cur.umpire2;
+  const completion = state.umpiringCompletions?.[matchKey];
+  if (completion && (!next1 || !next2)) {
+    // Completed matches already generated payouts; keep both slots assigned.
+    return null;
+  }
+  if (
+    completion &&
+    (!season.players.some((p) => p.id === next1) ||
+      !season.players.some((p) => p.id === next2))
+  ) {
+    return null;
+  }
   const entry: UmpiringSlotAssignment = {};
   if (next1) entry.umpire1 = next1;
   if (next2) entry.umpire2 = next2;
@@ -68,8 +80,26 @@ function mergeUmpiringAssignment(
   } else {
     nextMap[matchKey] = entry;
   }
+  const payoutId1 = completion?.expenseIds?.[0];
+  const payoutId2 = completion?.expenseIds?.[1];
+  const nextSeasons = state.seasons.map((s) => {
+    if (s.id !== seasonId || !completion) return s;
+    return {
+      ...s,
+      expenses: s.expenses.map((e) => {
+        if (payoutId1 && e.id === payoutId1) {
+          return { ...e, paidByPlayerId: next1 };
+        }
+        if (payoutId2 && e.id === payoutId2) {
+          return { ...e, paidByPlayerId: next2 };
+        }
+        return e;
+      }),
+    };
+  });
   return {
     ...state,
+    seasons: nextSeasons,
     umpiringAssignments: nextMap,
   };
 }

@@ -60,11 +60,21 @@ export type AppState = {
    * Legacy payloads used a single string per key (treated as umpire1).
    */
   umpiringAssignments?: Record<string, UmpiringSlotAssignment>;
+  /**
+   * Umpiring tab: completed fixture marker with generated payout expense ids.
+   * Used to avoid creating duplicate umpiring payout expenses.
+   */
+  umpiringCompletions?: Record<string, UmpiringMatchCompletion>;
 };
 
 export type UmpiringSlotAssignment = {
   umpire1?: string;
   umpire2?: string;
+};
+
+export type UmpiringMatchCompletion = {
+  completedAt: string;
+  expenseIds: string[];
 };
 
 /**

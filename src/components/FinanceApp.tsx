@@ -57,6 +57,8 @@ const MAIN_TABS: { id: MainTabId; label: string }[] = [
 
 const UMPIRE_SELECT_CLASS =
   "min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm touch-manipulation";
+const UMPIRE_PAYOUT_AMOUNT = 50;
+const UMPIRE_CATEGORY_ID = "umpire";
 
 function UmpireField({
   label,
@@ -319,17 +321,108 @@ export function FinanceApp() {
             slot === 1 ? (pid && pid.length > 0 ? pid : "") : cur.umpire1;
           const next2 =
             slot === 2 ? (pid && pid.length > 0 ? pid : "") : cur.umpire2;
+          const completion = app.umpiringCompletions?.[matchKey];
+          if (completion && (!next1 || !next2)) {
+            alert(
+              "Completed match payouts already exist. Reassign to another player instead of clearing.",
+            );
+            return app;
+          }
           const entry: UmpiringSlotAssignment = {};
           if (next1) entry.umpire1 = next1;
           if (next2) entry.umpire2 = next2;
           const nextMap = { ...base };
           if (!entry.umpire1 && !entry.umpire2) delete nextMap[matchKey];
           else nextMap[matchKey] = entry;
-          return { ...app, umpiringAssignments: nextMap };
+          const payoutId1 = completion?.expenseIds?.[0];
+          const payoutId2 = completion?.expenseIds?.[1];
+          return {
+            ...app,
+            umpiringAssignments: nextMap,
+            seasons: app.seasons.map((s) => {
+              if (s.id !== season.id || !completion) return s;
+              return {
+                ...s,
+                expenses: s.expenses.map((e) => {
+                  if (payoutId1 && e.id === payoutId1) {
+                    return { ...e, paidByPlayerId: next1 };
+                  }
+                  if (payoutId2 && e.id === payoutId2) {
+                    return { ...e, paidByPlayerId: next2 };
+                  }
+                  return e;
+                }),
+              };
+            }),
+          };
         });
       }
     },
     [season, remoteMode, postUmpiringAssignment, update],
+  );
+
+  const onUmpiringComplete = useCallback(
+    (matchKey: string, matchLabel: string) => {
+      if (!season) return;
+      const assigned = getUmpiringSlots(state?.umpiringAssignments, matchKey);
+      if (!assigned.umpire1 || !assigned.umpire2) {
+        alert("Assign both umpires before marking match completed.");
+        return;
+      }
+      if (state?.umpiringCompletions?.[matchKey]) return;
+      const completedAt = new Date().toISOString();
+      const payoutDate = completedAt.slice(0, 10);
+      update((app) => {
+        if (app.umpiringCompletions?.[matchKey]) return app;
+        const seasonRow = app.seasons.find((s) => s.id === season.id);
+        if (!seasonRow) return app;
+        if (
+          !seasonRow.players.some((p) => p.id === assigned.umpire1) ||
+          !seasonRow.players.some((p) => p.id === assigned.umpire2)
+        ) {
+          return app;
+        }
+        const categoryId = app.expenseCategories.some(
+          (c) => c.id === UMPIRE_CATEGORY_ID,
+        )
+          ? UMPIRE_CATEGORY_ID
+          : app.expenseCategories[0]?.id ?? DEFAULT_EXPENSE_CATEGORIES[0].id;
+        const payoutExpenses: Expense[] = [
+          {
+            id: newId(),
+            date: payoutDate,
+            amount: UMPIRE_PAYOUT_AMOUNT,
+            description: `Umpiring payout (${matchLabel}) — Slot 1`,
+            paidByPlayerId: assigned.umpire1,
+            category: categoryId,
+          },
+          {
+            id: newId(),
+            date: payoutDate,
+            amount: UMPIRE_PAYOUT_AMOUNT,
+            description: `Umpiring payout (${matchLabel}) — Slot 2`,
+            paidByPlayerId: assigned.umpire2,
+            category: categoryId,
+          },
+        ];
+        return {
+          ...app,
+          seasons: app.seasons.map((s) =>
+            s.id === season.id
+              ? { ...s, expenses: [...payoutExpenses, ...s.expenses] }
+              : s,
+          ),
+          umpiringCompletions: {
+            ...(app.umpiringCompletions ?? {}),
+            [matchKey]: {
+              completedAt,
+              expenseIds: payoutExpenses.map((e) => e.id),
+            },
+          },
+        };
+      });
+    },
+    [season, state?.umpiringAssignments, state?.umpiringCompletions, update],
   );
 
   useEffect(() => {
@@ -1687,6 +1780,14 @@ export function FinanceApp() {
                   sheet in the 2026 workbook (see Grounds tab); run{" "}
                   <code className="text-[11px]">npm run import:grounds</code> after
                   updating the spreadsheet.
+                  {!isViewer ? (
+                    <>
+                      {" "}
+                      Use <strong>Mark completed + add payouts</strong> to add{" "}
+                      <strong>${UMPIRE_PAYOUT_AMOUNT}</strong> as expense due to each
+                      assigned umpire.
+                    </>
+                  ) : null}
                 </p>
                 {season.players.length === 0 ? (
                   <p className="text-sm text-[var(--warn)]">
@@ -1706,6 +1807,10 @@ export function FinanceApp() {
                         state.umpiringAssignments,
                         mk,
                       );
+                      const isCompleted =
+                        Boolean(state.umpiringCompletions?.[mk]);
+                      const completedAt =
+                        state.umpiringCompletions?.[mk]?.completedAt ?? null;
                       const ghost1 =
                         umpire1 !== "" &&
                         !season.players.some((p) => p.id === umpire1);
@@ -1713,8 +1818,12 @@ export function FinanceApp() {
                         umpire2 !== "" &&
                         !season.players.some((p) => p.id === umpire2);
                       const ground = getNjsbclGroundForTeam(r.homeTeam);
-                      const busy =
-                        umpiringBusy || season.players.length === 0;
+                      const busy = umpiringBusy || season.players.length === 0;
+                      const canComplete =
+                        !isViewer &&
+                        !busy &&
+                        umpire1.length > 0 &&
+                        umpire2.length > 0;
                       return (
                         <div
                           key={mk}
@@ -1771,6 +1880,31 @@ export function FinanceApp() {
                                 ariaLabel={`Umpire 2 for ${r.date} ${r.div2a} vs ${r.div2d}`}
                               />
                             </div>
+                            {!isViewer ? (
+                              <div className="mt-4 flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={!canComplete}
+                                  onClick={() =>
+                                    onUmpiringComplete(
+                                      mk,
+                                      `${r.date}: ${r.div2a} vs ${r.div2d}`,
+                                    )
+                                  }
+                                  className="min-h-10 rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  {isCompleted
+                                    ? "Completed - payouts added"
+                                    : `Mark completed + add $${UMPIRE_PAYOUT_AMOUNT} payouts`}
+                                </button>
+                                {isCompleted && completedAt ? (
+                                  <span className="text-xs text-[var(--muted)]">
+                                    Completed on{" "}
+                                    {new Date(completedAt).toLocaleDateString()}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       );
